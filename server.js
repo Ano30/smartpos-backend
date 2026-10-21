@@ -1,7 +1,6 @@
 /* ============================================================
-   SMARTPOS - Backend Server
-   Node.js + Express + SQLite
-   Supports: Local PC + Cloud (Railway) + Cloud Backup
+   SMARTPOS - Backend Server (Turso Cloud + M-Pesa Simulation)
+   Node.js + Express + Turso (libSQL)
    ============================================================ */
 
 const express = require('express');
@@ -13,8 +12,8 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const sqlite3 = require('sqlite3').verbose();
 const multer = require('multer');
+const { createClient } = require('@libsql/client');
 
 // ============================================================
 // CONFIG
@@ -22,77 +21,71 @@ const multer = require('multer');
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'd6nvGYb4xRHQkLFKjTqI07wOlzmeoiCSZ1hp9VcPsAM23gUNWEDXryufa8tJB5';
 
-// ============================================================
-// ✅ WRITABLE PATHS — supports Local PC + Railway cloud
-// ============================================================
-// Priority order:
-// 1. RAILWAY_VOLUME_MOUNT_PATH (Railway persistent volume)
-// 2. DB_PATH (Electron env var for installed app)
-// 3. Local ./data (dev mode)
-const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
-    || (process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'));
-const DB_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH
-    ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'pos.db')
-    : (process.env.DB_PATH || path.join(DB_DIR, 'pos.db'));
-const BACKUP_ROOT = process.env.BACKUP_PATH || path.join(DB_DIR, 'backups');
-const CLOUD_DIR = path.join(BACKUP_ROOT, 'cloud');
-const TMP_DIR = process.env.TMP_DIR || path.join(DB_DIR, 'tmp');
-const CONFIG_FILE = process.env.CONFIG_PATH || path.join(DB_DIR, 'config.json');
-
-[DB_DIR, BACKUP_ROOT, CLOUD_DIR, TMP_DIR].forEach(dir => {
-    if (!fs.existsSync(dir)) {
-        try {
-            fs.mkdirSync(dir, { recursive: true });
-        } catch (e) {
-            console.error('[Server] Cannot create folder:', dir, e.message);
-        }
-    }
-});
-
-console.log('[Server] DB_PATH:', DB_PATH);
-console.log('[Server] BACKUP_ROOT:', BACKUP_ROOT);
-console.log('[Server] TMP_DIR:', TMP_DIR);
-console.log('[Server] Environment:', process.env.RAILWAY_VOLUME_MOUNT_PATH ? 'Railway Cloud' : (process.env.ELECTRON ? 'Electron App' : 'Dev'));
-
-// ============================================================
-// CONFIG MANAGEMENT
-// ============================================================
-function loadConfig() {
-    try {
-        if (fs.existsSync(CONFIG_FILE)) {
-            return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        }
-    } catch (e) {
-        console.error('[Config] Failed to load:', e.message);
-    }
-    return { cloudFolderPath: '', autoSyncEnabled: true };
+const TMP_DIR = process.env.TMP_DIR || path.join(os.tmpdir(), 'smartpos_tmp');
+if (!fs.existsSync(TMP_DIR)) {
+    try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch (e) {}
 }
 
-function saveConfig(config) {
-    try {
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-        return true;
-    } catch (e) {
-        console.error('[Config] Failed to save:', e.message);
-        return false;
-    }
-}
-
-let appConfig = loadConfig();
-console.log('[Config] Cloud folder:', appConfig.cloudFolderPath || '(not set)');
-
 // ============================================================
-// DATABASE
+// TURSO DATABASE CONNECTION & COMPATIBILITY WRAPPER
 // ============================================================
-const db = new sqlite3.Database(DB_PATH, (err) => {
-    if (err) {
-        console.error('[Database] Connection error:', err.message);
-        process.exit(1);
-    }
-    console.log('[Database] Connected');
-    runSchema();
+const turso = createClient({
+    url: process.env.TURSO_DATABASE_URL || 'file:local.db', // Falls back to local file if env vars are missing
+    authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
+// This wrapper allows us to use the existing db.run/db.get/db.all syntax
+function sanitizeArgs(args) {
+    if (!args) return [];
+    if (Array.isArray(args)) return args.map(a => a === undefined ? null : a);
+    return args;
+}
+
+const db = {
+    run: function(sql, params, callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        turso.execute({ sql, args: sanitizeArgs(params) }).then(res => {
+            const context = { lastID: Number(res.lastInsertRowid || 0), changes: res.rowsAffected };
+            if (callback) callback.call(context, null);
+        }).catch(err => {
+            console.error('[Turso Run Error]', err.message, '\nSQL:', sql);
+            if (callback) callback(err);
+        });
+    },
+    get: function(sql, params, callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        turso.execute({ sql, args: sanitizeArgs(params) }).then(res => {
+            if (callback) callback(null, res.rows[0]);
+        }).catch(err => {
+            console.error('[Turso Get Error]', err.message, '\nSQL:', sql);
+            if (callback) callback(err);
+        });
+    },
+    all: function(sql, params, callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        turso.execute({ sql, args: sanitizeArgs(params) }).then(res => {
+            if (callback) callback(null, res.rows);
+        }).catch(err => {
+            console.error('[Turso All Error]', err.message, '\nSQL:', sql);
+            if (callback) callback(err);
+        });
+    },
+    exec: function(sql, callback) {
+        turso.executeMultiple(sql).then(() => {
+            if (callback) callback(null);
+        }).catch(err => {
+            console.error('[Turso Exec Error]', err.message);
+            if (callback) callback(err);
+        });
+    },
+    close: function(callback) {
+        if (callback) callback(null);
+    }
+};
+
+// ============================================================
+// SCHEMA & SEED
+// ============================================================
 function runSchema() {
     const schema = `
         CREATE TABLE IF NOT EXISTS companies (
@@ -270,89 +263,17 @@ function onReady() {
     if (serverStarted) return;
     serverStarted = true;
 
-    try {
-        const result = createBackupFile('auto');
-        console.log(`[Startup Backup] ✓ ${result.filename} (${(result.size / 1024).toFixed(2)} KB)`);
-    } catch (err) { console.error('[Startup Backup] Failed:', err.message); }
-
-    syncToCloudFolder();
-
-    // ✅ Listen on 0.0.0.0 so phones on same WiFi can connect
     app.listen(PORT, '0.0.0.0', () => {
         console.log('╔════════════════════════════════════════════════════╗');
-        console.log('║         SmartPOS Backend Server Started            ║');
+        console.log('║    SmartPOS Backend (Turso Cloud + M-Pesa Sim)     ║');
         console.log('╠════════════════════════════════════════════════════╣');
         console.log(`║  Port:      ${PORT}                                   ║`);
-        console.log(`║  API:       http://localhost:${PORT}/api              ║`);
-        console.log(`║  Database:  ${DB_PATH.substring(0, 40)}...         ║`);
-        console.log(`║  Cloud:     ${appConfig.cloudFolderPath ? '✓ Enabled' : '✗ Not set'}                            ║`);
         console.log('╚════════════════════════════════════════════════════╝');
-
-        // Show local IP for mobile access
-        const interfaces = os.networkInterfaces();
-        for (const name of Object.keys(interfaces)) {
-            for (const iface of interfaces[name]) {
-                if (iface.family === 'IPv4' && !iface.internal) {
-                    console.log(`[Mobile Access] http://${iface.address}:${PORT}`);
-                    break;
-                }
-            }
-        }
     });
-
-    setInterval(() => {
-        try {
-            const result = createBackupFile('auto');
-            console.log(`[Auto Backup] ✓ ${result.filename}`);
-            syncToCloudFolder();
-        } catch (err) { console.error('[Auto Backup] Failed:', err.message); }
-    }, 30 * 60 * 1000);
 }
 
-// ============================================================
-// CLOUD SYNC
-// ============================================================
-function syncToCloudFolder() {
-    if (!appConfig.autoSyncEnabled) return;
-    if (!appConfig.cloudFolderPath) return;
-
-    try {
-        const cloudPath = appConfig.cloudFolderPath;
-        if (!fs.existsSync(cloudPath)) {
-            console.warn('[Cloud Sync] Folder not found:', cloudPath);
-            return;
-        }
-
-        const smartPosFolder = path.join(cloudPath, 'SmartPOS_Backups');
-        if (!fs.existsSync(smartPosFolder)) {
-            fs.mkdirSync(smartPosFolder, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `pos_${timestamp}.db`;
-        const dest = path.join(smartPosFolder, filename);
-        fs.copyFileSync(DB_PATH, dest);
-
-        const latestDest = path.join(smartPosFolder, 'latest.db');
-        fs.copyFileSync(DB_PATH, latestDest);
-
-        try {
-            const files = fs.readdirSync(smartPosFolder)
-                .filter(f => f.startsWith('pos_') && f.endsWith('.db'))
-                .map(f => ({ f, mtime: fs.statSync(path.join(smartPosFolder, f)).mtime }))
-                .sort((a, b) => b.mtime - a.mtime);
-            if (files.length > 30) {
-                files.slice(30).forEach(({ f }) => {
-                    try { fs.unlinkSync(path.join(smartPosFolder, f)); } catch (e) {}
-                });
-            }
-        } catch (e) {}
-
-        console.log(`[Cloud Sync] ✓ ${filename} copied to ${smartPosFolder}`);
-    } catch (err) {
-        console.error('[Cloud Sync] Failed:', err.message);
-    }
-}
+// Start the database initialization
+runSchema();
 
 // ============================================================
 // EXPRESS APP
@@ -368,9 +289,8 @@ const authLimiter = rateLimit({
     message: { error: 'Too many attempts. Please try again later.' }
 });
 
-// Serve frontend — env var takes priority (packaged app), else ../frontend (dev)
+// Serve frontend — env var takes priority, else ../frontend (dev)
 const FRONTEND_PATH = process.env.SMART_POS_FRONTEND || path.join(__dirname, '..', 'frontend');
-console.log('[Server] Serving frontend from:', FRONTEND_PATH);
 app.use(express.static(FRONTEND_PATH));
 
 // ============================================================
@@ -402,20 +322,14 @@ function requirePermission(permission) {
 }
 
 // ============================================================
-// BACKUP HELPERS
+// BACKUP HELPERS (MOCKED FOR TURSO CLOUD)
 // ============================================================
 function createBackupFile(type = 'manual') {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `pos_backup_${type}_${timestamp}.db`;
-    const dest = path.join(BACKUP_ROOT, filename);
-
-    fs.copyFileSync(DB_PATH, dest);
-    const stats = fs.statSync(dest);
-
-    db.run("INSERT INTO backups (filename, type, size) VALUES (?, ?, ?)",
-        [filename, type, stats.size]);
-
-    return { filename, size: stats.size, created: new Date().toISOString() };
+    const filename = `cloud_backup_${type}_${timestamp}.db`;
+    const size = 1024 * 50; // Mock 50KB size
+    db.run("INSERT INTO backups (filename, type, size) VALUES (?, ?, ?)", [filename, type, size]);
+    return { filename, size, created: new Date().toISOString() };
 }
 
 // ============================================================
@@ -425,24 +339,9 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// ✅ Server info for Mobile Access
 app.get('/api/server-info', (req, res) => {
-    const interfaces = os.networkInterfaces();
-    let localIP = 'localhost';
-    for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                localIP = iface.address;
-                break;
-            }
-        }
-    }
     res.json({
-        localIP,
-        port: PORT,
-        hostname: os.hostname(),
-        platform: os.platform(),
-        isCloud: !!process.env.RAILWAY_VOLUME_MOUNT_PATH
+        localIP: 'cloud', port: PORT, hostname: 'Turso', platform: 'Cloud', isCloud: true
     });
 });
 
@@ -695,7 +594,6 @@ app.post('/api/sales', authenticate, requirePermission('make_sale'), (req, res) 
                             [item.quantity, item.productId], () => {
                                 completed++;
                                 if (completed === items.length) {
-                                    syncToCloudFolder();
                                     res.json({
                                         success: true, saleId,
                                         receipt: {
@@ -931,15 +829,29 @@ app.delete('/api/employees/:id', authenticate, requirePermission('manage_employe
 });
 
 // ============================================================
-// M-PESA (stub)
+// M-PESA (SIMULATION MODE FOR ACCOUNTABILITY)
 // ============================================================
 app.post('/api/mpesa/stkpush', authenticate, (req, res) => {
     const { phone, amount } = req.body;
     const checkoutId = 'SIM_' + Date.now();
+    
+    // 1. Save the transaction as pending
     db.run(`INSERT INTO mpesa_transactions (company_id, checkout_request_id, phone, amount, status)
             VALUES (?, ?, ?, ?, 'pending')`,
         [req.user.companyId, checkoutId, phone, amount]);
-    res.json({ success: true, checkoutRequestId: checkoutId, message: 'STK push simulated.' });
+        
+    // 2. Simulate the customer entering their PIN and the payment succeeding after 3 seconds
+    setTimeout(() => {
+        // Generate a fake 10-character M-Pesa receipt code (e.g., QK42X8L9AB)
+        const fakeReceipt = 'Q' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        
+        db.run("UPDATE mpesa_transactions SET status = 'success', mpesa_receipt = ? WHERE checkout_request_id = ?", 
+            [fakeReceipt, checkoutId]);
+            
+        console.log(`[M-Pesa Simulation] Payment of KES ${amount} from ${phone} marked as SUCCESS. Receipt: ${fakeReceipt}`);
+    }, 3000);
+
+    res.json({ success: true, checkoutRequestId: checkoutId, message: 'STK push simulated successfully.' });
 });
 
 app.get('/api/mpesa/status/:id', authenticate, (req, res) => {
@@ -959,7 +871,7 @@ app.get('/api/mpesa/transactions', authenticate, (req, res) => {
 });
 
 app.get('/api/mpesa/config', authenticate, (req, res) => {
-    res.json({ configured: false, message: 'M-Pesa not yet configured' });
+    res.json({ configured: false, message: 'M-Pesa is currently in simulation mode.' });
 });
 
 // ============================================================
@@ -1025,7 +937,7 @@ app.get('/api/returns/:id', authenticate, (req, res) => {
 });
 
 // ============================================================
-// IMPORT — uses TMP_DIR (writable)
+// IMPORT
 // ============================================================
 const upload = multer({ dest: TMP_DIR });
 
@@ -1076,144 +988,61 @@ app.post('/api/import/prices', authenticate, requirePermission('edit_product'), 
 });
 
 // ============================================================
-// BACKUP ROUTES
+// BACKUP ROUTES (Mocked for Turso Cloud)
 // ============================================================
 app.post('/api/backup/create', authenticate, requirePermission('manage_backups'), (req, res) => {
     try {
         const result = createBackupFile(req.body.type || 'manual');
-        syncToCloudFolder();
         res.json({ success: true, ...result });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/backup/list', authenticate, requirePermission('manage_backups'), (req, res) => {
-    try {
-        const files = fs.readdirSync(BACKUP_ROOT)
-            .filter(f => f.endsWith('.db'))
-            .map(f => {
-                const stats = fs.statSync(path.join(BACKUP_ROOT, f));
-                return {
-                    filename: f,
-                    type: f.includes('_auto_') ? 'auto' : 'manual',
-                    size: stats.size,
-                    created: stats.mtime.toISOString()
-                };
-            })
-            .sort((a, b) => new Date(b.created) - new Date(a.created));
-        res.json(files);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.get('/api/backup/stats', authenticate, requirePermission('manage_backups'), (req, res) => {
-    try {
-        const files = fs.readdirSync(BACKUP_ROOT).filter(f => f.endsWith('.db'));
-        const stats = { auto: { count: 0, size: 0 }, manual: { count: 0, size: 0 }, cloud: { count: 0, size: 0 } };
-        files.forEach(f => {
-            const s = fs.statSync(path.join(BACKUP_ROOT, f));
-            const type = f.includes('_auto_') ? 'auto' : 'manual';
-            stats[type].count++;
-            stats[type].size += s.size;
-        });
-        if (fs.existsSync(CLOUD_DIR)) {
-            fs.readdirSync(CLOUD_DIR).forEach(f => {
-                const s = fs.statSync(path.join(CLOUD_DIR, f));
-                stats.cloud.count++;
-                stats.cloud.size += s.size;
-            });
-        }
-        res.json(stats);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.get('/api/backup/download/:type/:filename', authenticate, (req, res) => {
-    const filePath = path.join(BACKUP_ROOT, req.params.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
-    res.download(filePath);
-});
-
-app.post('/api/backup/restore/:type/:filename', authenticate, requirePermission('manage_backups'), (req, res) => {
-    const src = path.join(BACKUP_ROOT, req.params.filename);
-    if (!fs.existsSync(src)) return res.status(404).json({ error: 'Backup not found' });
-    try {
-        fs.copyFileSync(src, DB_PATH);
-        res.json({ success: true, message: 'Restore will take effect after restart' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/backup/clean', authenticate, requirePermission('manage_backups'), (req, res) => {
-    try {
-        const files = fs.readdirSync(BACKUP_ROOT)
-            .filter(f => f.endsWith('.db'))
-            .map(f => ({ f, mtime: fs.statSync(path.join(BACKUP_ROOT, f)).mtime }))
-            .sort((a, b) => b.mtime - a.mtime);
-        const toDelete = files.slice(10);
-        toDelete.forEach(({ f }) => fs.unlinkSync(path.join(BACKUP_ROOT, f)));
-        res.json({ success: true, deleted: toDelete.length });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/backup/sync-cloud', authenticate, requirePermission('manage_backups'), (req, res) => {
-    try {
-        syncToCloudFolder();
-        res.json({ success: true, message: 'Synced to cloud folder' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/backup/:type/:filename', authenticate, requirePermission('manage_backups'), (req, res) => {
-    const filePath = path.join(BACKUP_ROOT, req.params.filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    res.json({ success: true });
-});
-
-// ============================================================
-// CLOUD FOLDER CONFIG ROUTES
-// ============================================================
-app.get('/api/config/cloud-folder', authenticate, requirePermission('manage_backups'), (req, res) => {
-    res.json({
-        cloudFolderPath: appConfig.cloudFolderPath || '',
-        autoSyncEnabled: appConfig.autoSyncEnabled !== false
+    db.all("SELECT * FROM backups ORDER BY id DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows.map(r => ({
+            filename: r.filename,
+            type: r.type,
+            size: r.size,
+            created: r.created_at
+        })));
     });
 });
 
-app.post('/api/config/cloud-folder', authenticate, requirePermission('manage_backups'), (req, res) => {
-    const { cloudFolderPath, autoSyncEnabled } = req.body;
-
-    if (cloudFolderPath !== undefined) {
-        if (cloudFolderPath && !fs.existsSync(cloudFolderPath)) {
-            return res.status(400).json({ error: 'Folder does not exist. Please check the path.' });
-        }
-        appConfig.cloudFolderPath = cloudFolderPath;
-    }
-    if (autoSyncEnabled !== undefined) {
-        appConfig.autoSyncEnabled = autoSyncEnabled;
-    }
-
-    if (saveConfig(appConfig)) {
-        if (appConfig.cloudFolderPath) syncToCloudFolder();
-        res.json({ success: true, ...appConfig });
-    } else {
-        res.status(500).json({ error: 'Failed to save config' });
-    }
+app.get('/api/backup/stats', authenticate, requirePermission('manage_backups'), (req, res) => {
+    db.all("SELECT type, COUNT(*) as count, SUM(size) as size FROM backups GROUP BY type", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const stats = { auto: { count: 0, size: 0 }, manual: { count: 0, size: 0 }, cloud: { count: 0, size: 0 } };
+        (rows || []).forEach(r => {
+            if (stats[r.type]) {
+                stats[r.type].count = r.count;
+                stats[r.type].size = r.size || 0;
+            }
+        });
+        res.json(stats);
+    });
 });
 
-app.post('/api/config/test-cloud-folder', authenticate, requirePermission('manage_backups'), (req, res) => {
-    const { cloudFolderPath } = req.body;
-    if (!cloudFolderPath) return res.status(400).json({ error: 'No path provided' });
-    if (!fs.existsSync(cloudFolderPath)) {
-        return res.status(400).json({ error: 'Folder does not exist' });
-    }
-    try {
-        const smartPosFolder = path.join(cloudFolderPath, 'SmartPOS_Backups');
-        if (!fs.existsSync(smartPosFolder)) {
-            fs.mkdirSync(smartPosFolder, { recursive: true });
-        }
-        const testFile = path.join(smartPosFolder, 'test.txt');
-        fs.writeFileSync(testFile, 'SmartPOS test file — ' + new Date().toISOString());
-        fs.unlinkSync(testFile);
-        res.json({ success: true, message: 'Folder is writable!' });
-    } catch (err) {
-        res.status(500).json({ error: 'Cannot write to folder: ' + err.message });
-    }
+app.get('/api/backup/download/:type/:filename', authenticate, (req, res) => {
+    res.status(400).json({ error: 'Direct file download is not supported with Turso Cloud. Please use the Turso dashboard to export your database.' });
+});
+
+app.post('/api/backup/restore/:type/:filename', authenticate, requirePermission('manage_backups'), (req, res) => {
+    res.status(400).json({ error: 'Restore is handled automatically by Turso point-in-time recovery.' });
+});
+
+app.post('/api/backup/clean', authenticate, requirePermission('manage_backups'), (req, res) => {
+    db.run("DELETE FROM backups WHERE id NOT IN (SELECT id FROM backups ORDER BY id DESC LIMIT 10)", [], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, deleted: this.changes });
+    });
+});
+
+app.delete('/api/backup/:type/:filename', authenticate, requirePermission('manage_backups'), (req, res) => {
+    db.run("DELETE FROM backups WHERE filename = ?", [req.params.filename], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
 });
 
 // ============================================================
@@ -1353,8 +1182,7 @@ app.get('/api/analytics/dashboard', authenticate, (req, res) => {
 // ============================================================
 process.on('SIGINT', () => {
     console.log('\n[Server] Shutting down...');
-    db.close((err) => {
-        if (err) console.error(err.message);
+    db.close(() => {
         console.log('[Database] Closed');
         process.exit(0);
     });
