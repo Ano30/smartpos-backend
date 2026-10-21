@@ -30,11 +30,10 @@ if (!fs.existsSync(TMP_DIR)) {
 // TURSO DATABASE CONNECTION & COMPATIBILITY WRAPPER
 // ============================================================
 const turso = createClient({
-    url: process.env.TURSO_DATABASE_URL || 'file:local.db', // Falls back to local file if env vars are missing
+    url: process.env.TURSO_DATABASE_URL || 'file:local.db',
     authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-// This wrapper allows us to use the existing db.run/db.get/db.all syntax
 function sanitizeArgs(args) {
     if (!args) return [];
     if (Array.isArray(args)) return args.map(a => a === undefined ? null : a);
@@ -71,11 +70,28 @@ const db = {
         });
     },
     exec: function(sql, callback) {
-        turso.executeMultiple(sql).then(() => {
-            if (callback) callback(null);
-        }).catch(err => {
-            console.error('[Turso Exec Error]', err.message);
-            if (callback) callback(err);
+        // Turso's HTTP API sometimes rejects large multi-statement strings.
+        // We split by semicolon and execute them sequentially.
+        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+        let completed = 0;
+        let hasError = false;
+
+        const runNext = async (index) => {
+            if (index >= statements.length || hasError) return;
+            try {
+                await turso.execute(statements[index]);
+                runNext(index + 1);
+            } catch (err) {
+                if (!hasError) {
+                    hasError = true;
+                    console.error('[Turso Exec Error]', err.message);
+                    if (callback) callback(err);
+                }
+            }
+        };
+
+        runNext(0).then(() => {
+            if (!hasError && callback) callback(null);
         });
     },
     close: function(callback) {
@@ -232,7 +248,7 @@ function runSchema() {
 function seedDefaultData() {
     db.get("SELECT COUNT(*) as count FROM companies", (err, row) => {
         if (err) { console.error('[Seed] Error:', err.message); return onReady(); }
-        if (row.count > 0) { console.log('[Seed] Data exists, skipping'); return onReady(); }
+        if (row && row.count > 0) { console.log('[Seed] Data exists, skipping'); return onReady(); }
 
         const hash = bcrypt.hashSync('admin123', 10);
         db.run("INSERT INTO companies (name, phone, is_active) VALUES ('smart', '0700000000', 1)",
