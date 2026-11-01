@@ -117,7 +117,7 @@ function handleLogout() {
 }
 
 // ============================================================
-// PRODUCTS & CART
+// PRODUCTS & CART (FALLBACK ADDED)
 // ============================================================
 async function loadProducts() {
     try {
@@ -138,6 +138,7 @@ async function loadProducts() {
             renderProductGrid();
             showToast('Running in Offline Mode (cached products)', 'warning');
         } else {
+            // FALLBACK: If no cache and offline, give dummy products so the screen isn't empty
             products = [
                 { id: 9991, name: 'Test Item 1', selling_price: 100, stock: 50 },
                 { id: 9992, name: 'Test Item 2', selling_price: 250, stock: 20 }
