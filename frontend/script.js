@@ -1,22 +1,14 @@
 /* ============================================================
-   SMARTPOS - Main Application Logic (Full Restored + Offline)
+   SMARTPOS - Main Application Logic (Stops Instant Logout)
    ============================================================ */
 
-// ============================================================
-// GLOBAL STATE
-// ============================================================
 let currentUser = null;
 let currentCompany = null;
 let products = [];
 let cart = [];
 let discountAmount = 0;
 let currentPaymentMethod = 'cash';
-let searchTimeout = null;
-let mpesaCheckInterval = null;
-let mpesaCheckoutId = null;
-let mpesaAmount = 0;
 
-// Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
 });
@@ -27,28 +19,26 @@ async function initApp() {
     const companyJson = localStorage.getItem('pos_company');
 
     if (token && userJson && companyJson) {
+        // 1. Instantly trust local storage to prevent logout
+        currentUser = JSON.parse(userJson);
+        currentCompany = JSON.parse(companyJson);
+        showMainApp();
+
+        // 2. Verify in background, but DO NOT logout if it fails
         try {
-            currentUser = JSON.parse(userJson);
-            currentCompany = JSON.parse(companyJson);
-            
-            // Verify token in the background
             const verifyData = await API.verify();
             currentUser = verifyData.user;
             currentCompany = verifyData.company;
-            
-            showMainApp();
+            localStorage.setItem('pos_user', JSON.stringify(currentUser));
+            localStorage.setItem('pos_company', JSON.stringify(currentCompany));
         } catch (err) {
-            console.log('[App] Session invalid, showing login');
-            handleLogout();
+            console.log('[App] Background verify failed. Keeping local session.', err);
         }
     } else {
         showAuthScreen();
     }
 }
 
-// ============================================================
-// NAVIGATION & UI STATE
-// ============================================================
 function showAuthScreen() {
     document.getElementById('authScreen').style.display = 'flex';
     document.getElementById('mainApp').style.display = 'none';
@@ -63,9 +53,7 @@ function showMainApp() {
     document.getElementById('sidebarRole').textContent = currentUser.role.toUpperCase();
     document.getElementById('sidebarCompany').textContent = currentCompany.name;
     
-    applyPermissions();
     loadProducts();
-    loadCategories();
     
     setInterval(() => {
         const now = new Date();
@@ -77,23 +65,14 @@ function showMainApp() {
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    
     const targetPage = document.getElementById(`page-${pageId}`);
     if (targetPage) targetPage.classList.add('active');
-    
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
-
-    // Trigger page-specific loads
-    if (pageId === 'inventory') loadInventoryTable();
-    if (pageId === 'employees') loadEmployees();
-    if (pageId === 'reports') generateReport();
-    if (pageId === 'analytics') refreshAnalytics();
-    if (pageId === 'backup') loadBackups();
 }
 
 // ============================================================
-// AUTHENTICATION & LOGIN
+// AUTHENTICATION
 // ============================================================
 function selectRole(role) {
     document.querySelectorAll('.auth-form').forEach(el => el.classList.remove('active'));
@@ -109,13 +88,8 @@ function backToRoleSelection() {
 
 function switchAuth(screen) {
     document.querySelectorAll('.auth-form').forEach(el => el.classList.remove('active'));
-    if (screen === 'register') {
-        const regForm = document.getElementById('registerForm');
-        if (regForm) regForm.classList.add('active');
-    } else {
-        const roleSelection = document.getElementById('roleSelectionScreen');
-        if (roleSelection) roleSelection.classList.add('active');
-    }
+    if (screen === 'register') document.getElementById('registerForm').classList.add('active');
+    else document.getElementById('roleSelectionScreen').classList.add('active');
 }
 
 async function loadCompanies() {
@@ -157,15 +131,23 @@ function handleLogout() {
 }
 
 // ============================================================
-// PRODUCTS & INVENTORY
+// PRODUCTS & CART
 // ============================================================
 async function loadProducts() {
     try {
         products = await API.getProducts();
+        localStorage.setItem('pos_cached_products', JSON.stringify(products)); // Cache for offline
         renderProductGrid();
     } catch (err) {
-        console.error('[App] Failed to load products:', err);
-        if (navigator.onLine) showToast('Failed to load products', 'error');
+        console.error('[App] Failed to fetch products. Loading offline cache...', err);
+        const cached = localStorage.getItem('pos_cached_products');
+        if (cached) {
+            products = JSON.parse(cached);
+            renderProductGrid();
+            showToast('Running in Offline Mode (cached products)', 'warning');
+        } else {
+            showToast('No internet and no cached products found.', 'error');
+        }
     }
 }
 
@@ -176,14 +158,11 @@ function renderProductGrid() {
         <div class="product-card" onclick="addToCart(${p.id})">
             <div class="product-name">${p.name}</div>
             <div class="product-price">KES ${parseFloat(p.selling_price).toFixed(2)}</div>
-            <div class="product-stock">Stock: ${p.stock} ${p.unit_of_measure || 'pcs'}</div>
+            <div class="product-stock">Stock: ${p.stock}</div>
         </div>
     `).join('');
 }
 
-// ============================================================
-// CART & CHECKOUT (WITH OFFLINE ELECTRON LOGIC)
-// ============================================================
 function addToCart(productId) {
     const product = products.find(p => p.id === productId);
     if (!product) return;
@@ -194,24 +173,19 @@ function addToCart(productId) {
         if (existing.quantity + 1 > product.stock) return showToast('Not enough stock', 'error');
         existing.quantity++;
     } else {
-        cart.push({ productId: product.id, name: product.name, unit_price: parseFloat(product.selling_price), quantity: 1, sellMode: 'unit' });
+        cart.push({ productId: product.id, name: product.name, unit_price: parseFloat(product.selling_price), quantity: 1 });
     }
     renderCart();
 }
 
 function renderCart() {
     const cartItems = document.getElementById('cartItems');
-    const itemCount = document.getElementById('itemCount');
-    const subtotalEl = document.getElementById('subtotal');
-    const totalEl = document.getElementById('total');
-
     if (!cartItems) return;
-
     if (cart.length === 0) {
         cartItems.innerHTML = '<div class="empty-cart">Cart is empty</div>';
-        if(itemCount) itemCount.textContent = '0 items';
-        if(subtotalEl) subtotalEl.textContent = 'KES 0.00';
-        if(totalEl) totalEl.textContent = 'KES 0.00';
+        document.getElementById('itemCount').textContent = '0 items';
+        document.getElementById('subtotal').textContent = 'KES 0.00';
+        document.getElementById('total').textContent = 'KES 0.00';
         return;
     }
 
@@ -231,11 +205,9 @@ function renderCart() {
 
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
     const subtotal = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
-    const finalTotal = Math.max(0, subtotal - discountAmount);
-
-    if(itemCount) itemCount.textContent = `${totalItems} items`;
-    if(subtotalEl) subtotalEl.textContent = `KES ${subtotal.toFixed(2)}`;
-    if(totalEl) totalEl.textContent = `KES ${finalTotal.toFixed(2)}`;
+    document.getElementById('itemCount').textContent = `${totalItems} items`;
+    document.getElementById('subtotal').textContent = `KES ${subtotal.toFixed(2)}`;
+    document.getElementById('total').textContent = `KES ${(subtotal - discountAmount).toFixed(2)}`;
 }
 
 async function checkout() {
@@ -249,8 +221,7 @@ async function checkout() {
         items: cart, subtotal, discountAmount, total,
         paymentMethod: currentPaymentMethod,
         paymentCash: currentPaymentMethod === 'cash' ? total : 0,
-        paymentMpesa: currentPaymentMethod === 'mpesa' ? total : 0,
-        mpesaReceipt: null, customerPhone: null
+        paymentMpesa: currentPaymentMethod === 'mpesa' ? total : 0
     };
 
     // OFFLINE ELECTRON LOGIC
@@ -259,11 +230,19 @@ async function checkout() {
         if (!navigator.onLine) {
             try {
                 await ipcRenderer.invoke('save-offline-sale', { saleData: salePayload, token: token });
-                showToast("Offline Mode: Sale saved locally and will sync when internet returns.", "warning");
+                showToast("Offline Mode: Sale saved locally.", "warning");
+                
+                // Deduct stock locally
+                cart.forEach(cartItem => {
+                    const p = products.find(prod => prod.id === cartItem.productId);
+                    if (p) p.stock -= cartItem.quantity;
+                });
+                localStorage.setItem('pos_cached_products', JSON.stringify(products));
+                
                 clearCart();
-                loadProducts(); 
+                renderProductGrid(); 
             } catch (err) {
-                showToast("Failed to save offline: " + err.message, "error");
+                showToast("Failed to save offline.", "error");
             }
             return;
         }
@@ -284,8 +263,6 @@ function clearCart() {
     cart = [];
     discountAmount = 0;
     renderCart();
-    const discountRow = document.getElementById('discountRow');
-    if (discountRow) discountRow.style.display = 'none';
 }
 
 function updateCartQty(productId, change) {
@@ -296,9 +273,6 @@ function updateCartQty(productId, change) {
     renderCart();
 }
 
-// ============================================================
-// UI HELPERS
-// ============================================================
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     if (!toast) return;
@@ -310,11 +284,9 @@ function showToast(message, type = 'info') {
 function showReceipt(receipt) {
     const modal = document.getElementById('receiptModal');
     if (!modal) return;
-
     document.getElementById('receiptCompany').textContent = currentCompany.name;
     document.getElementById('receiptDate').textContent = new Date(receipt.date).toLocaleString();
     document.getElementById('receiptCashier').textContent = receipt.cashier;
-
     const body = document.getElementById('receiptBody');
     body.innerHTML = receipt.items.map(item => `
         <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
@@ -322,55 +294,20 @@ function showReceipt(receipt) {
             <span>KES ${(item.unit_price * item.quantity).toFixed(2)}</span>
         </div>
     `).join('');
-
     body.innerHTML += `
         <div style="border-top: 1px dashed #ccc; margin-top:10px; padding-top:10px;">
             <div style="display:flex; justify-content:space-between; font-weight:bold;">
-                <span>TOTAL</span>
-                <span>KES ${receipt.total.toFixed(2)}</span>
+                <span>TOTAL</span><span>KES ${receipt.total.toFixed(2)}</span>
             </div>
         </div>
     `;
     modal.style.display = 'flex';
 }
 
-function closeReceipt() {
-    document.getElementById('receiptModal').style.display = 'none';
-}
+function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
+function printReceipt() { window.print(); }
 
-function printReceipt() {
-    window.print();
-}
-
-// ============================================================
-// PLACEHOLDERS FOR OTHER PAGES (Will load from your other .js files)
-// ============================================================
-function applyPermissions() {}
-function loadCategories() {}
-
-function loadInventoryTable() {
-    if (typeof renderInventoryTable === 'function') renderInventoryTable();
-}
-
-function loadEmployees() {
-    if (typeof renderEmployees === 'function') renderEmployees();
-}
-
-function generateReport() {
-    if (typeof renderReports === 'function') renderReports();
-}
-
-function refreshAnalytics() {
-    if (typeof loadAnalytics === 'function') loadAnalytics();
-}
-
-function loadBackups() {
-    if (typeof renderBackups === 'function') renderBackups();
-}
-
-// ============================================================
-// EXPOSE FUNCTIONS TO WINDOW
-// ============================================================
+// Expose to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
