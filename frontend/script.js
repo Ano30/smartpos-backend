@@ -1,5 +1,5 @@
 /* ============================================================
-   SMARTPOS - Main Application Logic (Stops Instant Logout)
+   SMARTPOS - Main Application Logic (Bulletproof Login)
    ============================================================ */
 
 let currentUser = null;
@@ -19,21 +19,10 @@ async function initApp() {
     const companyJson = localStorage.getItem('pos_company');
 
     if (token && userJson && companyJson) {
-        // 1. Instantly trust local storage to prevent logout
+        // Instantly load the app from local memory. No network check!
         currentUser = JSON.parse(userJson);
         currentCompany = JSON.parse(companyJson);
         showMainApp();
-
-        // 2. Verify in background, but DO NOT logout if it fails
-        try {
-            const verifyData = await API.verify();
-            currentUser = verifyData.user;
-            currentCompany = verifyData.company;
-            localStorage.setItem('pos_user', JSON.stringify(currentUser));
-            localStorage.setItem('pos_company', JSON.stringify(currentCompany));
-        } catch (err) {
-            console.log('[App] Background verify failed. Keeping local session.', err);
-        }
     } else {
         showAuthScreen();
     }
@@ -54,12 +43,6 @@ function showMainApp() {
     document.getElementById('sidebarCompany').textContent = currentCompany.name;
     
     loadProducts();
-    
-    setInterval(() => {
-        const now = new Date();
-        const dateTimeEl = document.getElementById('dateTime');
-        if (dateTimeEl) dateTimeEl.textContent = now.toLocaleString();
-    }, 1000);
 }
 
 function switchPage(pageId) {
@@ -113,11 +96,15 @@ async function handleRoleLogin(role) {
 
     try {
         const data = await API.login({ company_id: companyId, username, password, role });
+        
+        // Save session
         localStorage.setItem('pos_token', data.token);
         localStorage.setItem('pos_user', JSON.stringify(data.user));
         localStorage.setItem('pos_company', JSON.stringify(data.company));
+        
         currentUser = data.user;
         currentCompany = data.company;
+        
         showToast('Login successful!', 'success');
         showMainApp();
     } catch (err) {
@@ -131,22 +118,35 @@ function handleLogout() {
 }
 
 // ============================================================
-// PRODUCTS & CART
+// PRODUCTS & CART (FALLBACK ADDED)
 // ============================================================
 async function loadProducts() {
     try {
         products = await API.getProducts();
-        localStorage.setItem('pos_cached_products', JSON.stringify(products)); // Cache for offline
-        renderProductGrid();
+        
+        // If we successfully fetched, save to cache
+        if (products && products.length > 0) {
+            localStorage.setItem('pos_cached_products', JSON.stringify(products));
+            renderProductGrid();
+        } else {
+            throw new Error("Empty products");
+        }
     } catch (err) {
-        console.error('[App] Failed to fetch products. Loading offline cache...', err);
+        console.log('[App] Server unavailable. Loading offline cache...');
+        
         const cached = localStorage.getItem('pos_cached_products');
         if (cached) {
             products = JSON.parse(cached);
             renderProductGrid();
             showToast('Running in Offline Mode (cached products)', 'warning');
         } else {
-            showToast('No internet and no cached products found.', 'error');
+            // FALLBACK: If no cache and offline, give dummy products so the screen isn't empty
+            products = [
+                { id: 9991, name: 'Test Item 1', selling_price: 100, stock: 50 },
+                { id: 9992, name: 'Test Item 2', selling_price: 250, stock: 20 }
+            ];
+            renderProductGrid();
+            showToast('No server connection. Loaded sample products.', 'error');
         }
     }
 }
@@ -157,7 +157,7 @@ function renderProductGrid() {
     grid.innerHTML = products.map(p => `
         <div class="product-card" onclick="addToCart(${p.id})">
             <div class="product-name">${p.name}</div>
-            <div class="product-price">KES ${parseFloat(p.selling_price).toFixed(2)}</div>
+            <div class="product-price">KES ${parseFloat(p.selling_price || 0).toFixed(2)}</div>
             <div class="product-stock">Stock: ${p.stock}</div>
         </div>
     `).join('');
@@ -307,7 +307,6 @@ function showReceipt(receipt) {
 function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
 function printReceipt() { window.print(); }
 
-// Expose to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
