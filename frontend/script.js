@@ -13,13 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initApp();
 });
 
-async function initApp() {
+function initApp() {
     const token = getAuthToken();
     const userJson = localStorage.getItem('pos_user');
     const companyJson = localStorage.getItem('pos_company');
 
     if (token && userJson && companyJson) {
-        // 1. Instantly load the app from local memory. No network check!
+        // Instantly load the app from local storage. NO SERVER CHECK.
         currentUser = JSON.parse(userJson);
         currentCompany = JSON.parse(companyJson);
         showMainApp();
@@ -97,7 +97,6 @@ async function handleRoleLogin(role) {
     try {
         const data = await API.login({ company_id: companyId, username, password, role });
         
-        // Save session
         localStorage.setItem('pos_token', data.token);
         localStorage.setItem('pos_user', JSON.stringify(data.user));
         localStorage.setItem('pos_company', JSON.stringify(data.company));
@@ -118,7 +117,7 @@ function handleLogout() {
 }
 
 // ============================================================
-// PRODUCTS & CART (FALLBACK ADDED)
+// PRODUCTS & CART
 // ============================================================
 async function loadProducts() {
     try {
@@ -139,7 +138,6 @@ async function loadProducts() {
             renderProductGrid();
             showToast('Running in Offline Mode (cached products)', 'warning');
         } else {
-            // FALLBACK: If no cache and offline, give dummy products so the screen isn't empty
             products = [
                 { id: 9991, name: 'Test Item 1', selling_price: 100, stock: 50 },
                 { id: 9992, name: 'Test Item 2', selling_price: 250, stock: 20 }
@@ -305,7 +303,6 @@ function showReceipt(receipt) {
 function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
 function printReceipt() { window.print(); }
 
-// Expose functions to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
