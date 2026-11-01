@@ -1,5 +1,5 @@
 /* ============================================================
-   SMARTPOS - Main Application Logic (Bulletproof Login)
+   SMARTPOS - Main Application Logic (Full + Offline Ready)
    ============================================================ */
 
 let currentUser = null;
@@ -52,6 +52,12 @@ function switchPage(pageId) {
     if (targetPage) targetPage.classList.add('active');
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
+
+    if (pageId === 'inventory') loadInventoryTable();
+    if (pageId === 'employees') loadEmployees();
+    if (pageId === 'reports') generateReport();
+    if (pageId === 'analytics') refreshAnalytics();
+    if (pageId === 'backup') loadBackups();
 }
 
 // ============================================================
@@ -138,7 +144,6 @@ async function loadProducts() {
             renderProductGrid();
             showToast('Running in Offline Mode (cached products)', 'warning');
         } else {
-            // FALLBACK: If no cache and offline, give dummy products so the screen isn't empty
             products = [
                 { id: 9991, name: 'Test Item 1', selling_price: 100, stock: 50 },
                 { id: 9992, name: 'Test Item 2', selling_price: 250, stock: 20 }
@@ -222,7 +227,6 @@ async function checkout() {
         paymentMpesa: currentPaymentMethod === 'mpesa' ? total : 0
     };
 
-    // OFFLINE ELECTRON LOGIC
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
@@ -245,7 +249,6 @@ async function checkout() {
         }
     }
 
-    // ONLINE LOGIC
     try {
         const response = await API.createSale(salePayload);
         showReceipt(response.receipt);
@@ -304,6 +307,23 @@ function showReceipt(receipt) {
 function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
 function printReceipt() { window.print(); }
 
+// ============================================================
+// PLACEHOLDERS FOR OTHER PAGES
+// ============================================================
+function applyPermissions() {}
+function loadCategories() {}
+function loadInventoryTable() {}
+function loadEmployees() {}
+function generateReport() {}
+function refreshAnalytics() {}
+function loadBackups() {}
+function selectPaymentMethod(method) {
+    currentPaymentMethod = method;
+    document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.pay-method-btn[data-method="${method}"]`).classList.add('active');
+}
+
+// Expose functions to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
@@ -317,3 +337,4 @@ window.updateCartQty = updateCartQty;
 window.closeReceipt = closeReceipt;
 window.printReceipt = printReceipt;
 window.switchPage = switchPage;
+window.selectPaymentMethod = selectPaymentMethod;
