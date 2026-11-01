@@ -10,15 +10,19 @@ function detectAPIBase() {
 }
 
 const API_BASE = detectAPIBase();
-let authToken = localStorage.getItem('pos_token') || null;
-window.getAuthToken = () => authToken;
+
+// CHANGED: Always grab the latest token from localStorage dynamically
+window.getAuthToken = () => localStorage.getItem('pos_token');
 
 async function apiCall(endpoint, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers
     };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    
+    // CHANGED: Fetch the token fresh right before the request is sent
+    const currentToken = localStorage.getItem('pos_token');
+    if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
 
     try {
         const response = await fetch(API_BASE + endpoint, {
@@ -36,7 +40,6 @@ async function apiCall(endpoint, options = {}) {
         }
 
         // If the server returns an error, throw it, but DO NOT wipe localStorage here.
-        // Wiping localStorage is what causes the instant logout!
         if (!response.ok) {
             throw new Error(data.error || 'Request failed');
         }
@@ -44,7 +47,6 @@ async function apiCall(endpoint, options = {}) {
         return data;
 
     } catch (err) {
-        // Just pass the error up to the caller. The UI will handle it gracefully.
         throw err;
     }
 }
@@ -73,7 +75,19 @@ const API = {
     createBackup: (type = 'manual') => apiCall('/backup/create', { method: 'POST', body: JSON.stringify({ type }) }),
     listBackups: () => apiCall('/backup/list'),
     backupStats: () => apiCall('/backup/stats'),
-    downloadBackup: (type, filename) => { const url = `${API_BASE}/backup/download/${type}/${encodeURIComponent(filename)}?token=${authToken}`; const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); },
+    
+    // CHANGED: Fetch fresh token for download
+    downloadBackup: (type, filename) => { 
+        const currentToken = localStorage.getItem('pos_token');
+        const url = `${API_BASE}/backup/download/${type}/${encodeURIComponent(filename)}?token=${currentToken}`; 
+        const a = document.createElement('a'); 
+        a.href = url; 
+        a.download = filename; 
+        document.body.appendChild(a); 
+        a.click(); 
+        document.body.removeChild(a); 
+    },
+    
     restoreBackup: (type, filename) => apiCall(`/backup/restore/${type}/${encodeURIComponent(filename)}`, { method: 'POST' }),
     cleanBackups: () => apiCall('/backup/clean', { method: 'POST' }),
     syncCloud: () => apiCall('/backup/sync-cloud', { method: 'POST' }),
@@ -101,7 +115,23 @@ const API = {
     checkMpesaStatus: (checkoutId) => apiCall(`/mpesa/status/${encodeURIComponent(checkoutId)}`),
     getMpesaTransactions: () => apiCall('/mpesa/transactions'),
     getMpesaConfig: () => apiCall('/mpesa/config'),
-    previewImport: (file) => { const formData = new FormData(); formData.append('file', file); return fetch(API_BASE + '/import/preview', { method: 'POST', headers: { 'Authorization': `Bearer ${authToken}` }, body: formData }).then(async (r) => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Preview failed'); return data; }); },
+    
+    // CHANGED: Fetch fresh token for FormData upload
+    previewImport: (file) => { 
+        const currentToken = localStorage.getItem('pos_token');
+        const formData = new FormData(); 
+        formData.append('file', file); 
+        return fetch(API_BASE + '/import/preview', { 
+            method: 'POST', 
+            headers: { 'Authorization': `Bearer ${currentToken}` }, 
+            body: formData 
+        }).then(async (r) => { 
+            const data = await r.json(); 
+            if (!r.ok) throw new Error(data.error || 'Preview failed'); 
+            return data; 
+        }); 
+    },
+    
     importProducts: (rows, mapping) => apiCall('/import/products', { method: 'POST', body: JSON.stringify({ rows, mapping }) }),
     updatePrices: (rows, mapping) => apiCall('/import/prices', { method: 'POST', body: JSON.stringify({ rows, mapping }) }),
     searchSaleForReturn: (params) => apiCall('/returns/search-sale?' + new URLSearchParams(params)),
