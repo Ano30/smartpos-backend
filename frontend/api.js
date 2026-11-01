@@ -1,10 +1,11 @@
 /* ============================================
-   SMARTPOS - API Client (No Timeouts)
+   SMARTPOS - API Client (Bulletproof Login Fix)
    ============================================ */
 
 const CLOUD_URL = 'https://smartpos-backend-gtwl.onrender.com';
 
 function detectAPIBase() {
+    // Force it to always use the live cloud URL
     return CLOUD_URL + '/api';
 }
 
@@ -13,31 +14,37 @@ let authToken = localStorage.getItem('pos_token') || null;
 window.getAuthToken = () => authToken;
 
 async function apiCall(endpoint, options = {}) {
-    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
     try {
-        // NO TIMEOUT. Wait as long as it takes for Render to wake up.
         const response = await fetch(API_BASE + endpoint, {
             ...options,
             headers
         });
 
-        const isAuthRoute = endpoint.includes('/auth/login') || endpoint.includes('/companies');
-        
-        if (response.status === 401 && !isAuthRoute) {
-            localStorage.clear();
-            window.location.reload(); // Force reload if token is truly dead
-            throw new Error('Session expired.');
-        }
-
         let data;
         const text = await response.text();
-        try { data = JSON.parse(text); } catch (e) { throw new Error('Invalid response.'); }
-        if (!response.ok) throw new Error(data.error || 'Request failed');
+        
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            throw new Error('Invalid response from server.');
+        }
+
+        // If the server returns an error, throw it, but DO NOT wipe localStorage here.
+        // Wiping localStorage is what causes the instant logout!
+        if (!response.ok) {
+            throw new Error(data.error || 'Request failed');
+        }
+
         return data;
 
     } catch (err) {
+        // Just pass the error up to the caller. The UI will handle it gracefully.
         throw err;
     }
 }
