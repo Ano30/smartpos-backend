@@ -2,6 +2,9 @@
    SMARTPOS - Main Application Logic (Full + Offline Ready)
    ============================================================ */
 
+// ============================================================
+// GLOBAL STATE
+// ============================================================
 let currentUser = null;
 let currentCompany = null;
 let products = [];
@@ -42,17 +45,22 @@ function showMainApp() {
     document.getElementById('sidebarRole').textContent = currentUser.role.toUpperCase();
     document.getElementById('sidebarCompany').textContent = currentCompany.name;
     
+    applyPermissions();
     loadProducts();
+    loadCategories();
 }
 
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    
     const targetPage = document.getElementById(`page-${pageId}`);
     if (targetPage) targetPage.classList.add('active');
+    
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
 
+    // Trigger page-specific loads
     if (pageId === 'inventory') loadInventoryTable();
     if (pageId === 'employees') loadEmployees();
     if (pageId === 'reports') generateReport();
@@ -123,7 +131,7 @@ function handleLogout() {
 }
 
 // ============================================================
-// PRODUCTS & CART (FALLBACK ADDED)
+// PRODUCTS & CART (OFFLINE FALLBACK)
 // ============================================================
 async function loadProducts() {
     try {
@@ -144,6 +152,7 @@ async function loadProducts() {
             renderProductGrid();
             showToast('Running in Offline Mode (cached products)', 'warning');
         } else {
+            // FALLBACK: If no cache and offline, load sample products
             products = [
                 { id: 9991, name: 'Test Item 1', selling_price: 100, stock: 50 },
                 { id: 9992, name: 'Test Item 2', selling_price: 250, stock: 20 }
@@ -227,6 +236,7 @@ async function checkout() {
         paymentMpesa: currentPaymentMethod === 'mpesa' ? total : 0
     };
 
+    // OFFLINE ELECTRON LOGIC
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
@@ -249,6 +259,7 @@ async function checkout() {
         }
     }
 
+    // ONLINE LOGIC
     try {
         const response = await API.createSale(salePayload);
         showReceipt(response.receipt);
@@ -308,22 +319,155 @@ function closeReceipt() { document.getElementById('receiptModal').style.display 
 function printReceipt() { window.print(); }
 
 // ============================================================
-// PLACEHOLDERS FOR OTHER PAGES
+// REAL FUNCTIONS FOR OTHER PAGES (Fixes the unresponsive buttons)
 // ============================================================
-function applyPermissions() {}
-function loadCategories() {}
-function loadInventoryTable() {}
-function loadEmployees() {}
-function generateReport() {}
-function refreshAnalytics() {}
-function loadBackups() {}
+function applyPermissions() {
+    const role = currentUser.role;
+    document.querySelectorAll('.perm-add-product').forEach(el => el.style.display = (role === 'owner' || role === 'admin') ? '' : 'none');
+    document.querySelectorAll('.perm-restock').forEach(el => el.style.display = (role === 'owner' || role === 'admin') ? '' : 'none');
+    document.querySelectorAll('.perm-reports').forEach(el => el.style.display = (role === 'owner' || role === 'admin') ? '' : 'none');
+    document.querySelectorAll('.perm-employees').forEach(el => el.style.display = (role === 'owner') ? '' : 'none');
+}
+
+function loadCategories() {
+    const cats = [...new Set(products.map(p => p.category))].filter(Boolean);
+    const filter = document.getElementById('categoryFilter');
+    if (filter) {
+        filter.innerHTML = '<button class="category-btn active" data-category="all">All</button>' + 
+            cats.map(c => `<button class="category-btn" data-category="${c}">${c}</button>`).join('');
+    }
+}
+
+function loadInventoryTable() {
+    const tableBody = document.getElementById('inventoryTableBody');
+    if (!tableBody) return;
+
+    tableBody.innerHTML = products.map((p, index) => `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${p.name}</td>
+            <td>${p.category || '-'}</td>
+            <td>${p.type || 'inventory'}</td>
+            <td>KES ${parseFloat(p.cost_price || 0).toFixed(2)}</td>
+            <td>KES ${parseFloat(p.selling_price || 0).toFixed(2)}</td>
+            <td>${p.stock}</td>
+            <td>${p.barcode || '-'}</td>
+            <td>
+                <button onclick="editProduct(${p.id})" style="background:#3498db;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;">Edit</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function loadEmployees() {
+    const tableBody = document.getElementById('employeeTableBody');
+    if (!tableBody) return;
+    API.getEmployees().then(employees => {
+        tableBody.innerHTML = employees.map((emp, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${emp.full_name}</td>
+                <td>${emp.username}</td>
+                <td>${emp.role}</td>
+                <td>${emp.is_active ? 'Active' : 'Inactive'}</td>
+                <td><button onclick="editEmployee(${emp.id})" style="background:#3498db;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;">Edit</button></td>
+            </tr>
+        `).join('');
+    }).catch(err => console.error('Failed to load employees:', err));
+}
+
+function generateReport() {
+    const summary = document.getElementById('reportSummary');
+    if (!summary) return;
+    summary.innerHTML = '<div style="padding:20px;text-align:center;color:#7f8c8d;">Generating reports from server...</div>';
+    API.getSales({ type: 'today' }).then(sales => {
+        const total = sales.reduce((sum, s) => sum + s.total, 0);
+        summary.innerHTML = `
+            <div style="display:flex;justify-content:space-around;padding:20px;background:#fff;border-radius:8px;">
+                <div style="text-align:center;">
+                    <div style="font-size:24px;font-weight:bold;color:#27ae60;">${sales.length}</div>
+                    <div style="color:#7f8c8d;">Transactions</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="font-size:24px;font-weight:bold;color:#27ae60;">KES ${total.toFixed(2)}</div>
+                    <div style="color:#7f8c8d;">Total Revenue</div>
+                </div>
+            </div>
+        `;
+    }).catch(err => {
+        summary.innerHTML = '<div style="padding:20px;text-align:center;color:#e74c3c;">Failed to generate report (offline).</div>';
+    });
+}
+
+function refreshAnalytics() {
+    const kpiRevenue = document.getElementById('kpiRevenue');
+    if (!kpiRevenue) return;
+    kpiRevenue.textContent = 'Loading...';
+    API.getKPIs('today').then(data => {
+        kpiRevenue.textContent = `KES ${parseFloat(data.revenue).toFixed(2)}`;
+        document.getElementById('kpiTransactions').textContent = data.transactions;
+        document.getElementById('kpiItems').textContent = data.itemsSold;
+        document.getElementById('kpiStockValue').textContent = `KES ${parseFloat(data.stockValue).toFixed(2)}`;
+    }).catch(err => {
+        kpiRevenue.textContent = 'Offline';
+    });
+}
+
+function loadBackups() {
+    const tableBody = document.getElementById('backupTableBody');
+    if (!tableBody) return;
+    API.listBackups().then(backups => {
+        tableBody.innerHTML = backups.map((b, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${b.filename}</td>
+                <td>${b.type}</td>
+                <td>${b.size} B</td>
+                <td>${new Date(b.created).toLocaleString()}</td>
+                <td>-</td>
+            </tr>
+        `).join('');
+    }).catch(err => {
+        tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Offline - cannot load backups</td></tr>';
+    });
+}
+
+// Helper functions for payment methods
 function selectPaymentMethod(method) {
     currentPaymentMethod = method;
     document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelector(`.pay-method-btn[data-method="${method}"]`).classList.add('active');
+    const targetBtn = document.querySelector(`.pay-method-btn[data-method="${method}"]`);
+    if (targetBtn) targetBtn.classList.add('active');
+    document.querySelectorAll('.payment-view').forEach(view => view.classList.remove('active'));
+    const targetView = document.getElementById(`payment${method.charAt(0).toUpperCase() + method.slice(1)}View`);
+    if (targetView) targetView.classList.add('active');
 }
 
-// Expose functions to window
+function toggleDiscountInput() {
+    const group = document.getElementById('discountInputGroup');
+    if (group) group.style.display = group.style.display === 'none' ? 'flex' : 'none';
+}
+
+function applyDiscount() {
+    const input = document.getElementById('discountInput');
+    if (input) {
+        discountAmount = parseFloat(input.value) || 0;
+        renderCart();
+        document.getElementById('discountRow').style.display = 'flex';
+        document.getElementById('discountDisplay').textContent = `- KES ${discountAmount.toFixed(2)}`;
+    }
+}
+
+function clearDiscount() {
+    discountAmount = 0;
+    renderCart();
+    document.getElementById('discountRow').style.display = 'none';
+    document.getElementById('discountInputGroup').style.display = 'none';
+}
+
+// ============================================================
+// EXPOSE FUNCTIONS TO WINDOW
+// ============================================================
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
@@ -338,3 +482,6 @@ window.closeReceipt = closeReceipt;
 window.printReceipt = printReceipt;
 window.switchPage = switchPage;
 window.selectPaymentMethod = selectPaymentMethod;
+window.toggleDiscountInput = toggleDiscountInput;
+window.applyDiscount = applyDiscount;
+window.clearDiscount = clearDiscount;
