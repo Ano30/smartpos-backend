@@ -19,7 +19,7 @@ async function initApp() {
     const companyJson = localStorage.getItem('pos_company');
 
     if (token && userJson && companyJson) {
-        // Instantly load the app from local memory. No network check!
+        // 1. Instantly load the app from local memory. No network check!
         currentUser = JSON.parse(userJson);
         currentCompany = JSON.parse(companyJson);
         showMainApp();
@@ -124,7 +124,6 @@ async function loadProducts() {
     try {
         products = await API.getProducts();
         
-        // If we successfully fetched, save to cache
         if (products && products.length > 0) {
             localStorage.setItem('pos_cached_products', JSON.stringify(products));
             renderProductGrid();
@@ -232,7 +231,6 @@ async function checkout() {
                 await ipcRenderer.invoke('save-offline-sale', { saleData: salePayload, token: token });
                 showToast("Offline Mode: Sale saved locally.", "warning");
                 
-                // Deduct stock locally
                 cart.forEach(cartItem => {
                     const p = products.find(prod => prod.id === cartItem.productId);
                     if (p) p.stock -= cartItem.quantity;
@@ -307,6 +305,7 @@ function showReceipt(receipt) {
 function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
 function printReceipt() { window.print(); }
 
+// Expose functions to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
