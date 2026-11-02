@@ -9,19 +9,13 @@ let cart = [];
 let discountAmount = 0;
 let currentPaymentMethod = 'cash';
 
-// Initialize app and attach event listeners
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
-
-    // 🎯 SIDEBAR NAVIGATION FIX
-    // This listens for clicks on the sidebar buttons and changes the page
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
             const pageId = item.getAttribute('data-page');
-            if (pageId) {
-                switchPage(pageId);
-            }
+            if (pageId) switchPage(pageId);
         });
     });
 });
@@ -192,7 +186,6 @@ function switchPage(pageId) {
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
 
-    // Initialize specific pages if needed
     if (pageId === 'returns' && typeof initReturnsPage === 'function') {
         initReturnsPage();
     }
@@ -306,7 +299,6 @@ function clearCart() {
 // ============================================================
 function selectPaymentMethod(method) {
     currentPaymentMethod = method;
-    
     document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
     const btn = document.querySelector(`.pay-method-btn[data-method="${method}"]`);
     if (btn) btn.classList.add('active');
@@ -344,14 +336,10 @@ function calculateChange() {
     }
 }
 
-// ============================================================
-// SPLIT PAYMENT LOGIC
-// ============================================================
 function calculateSplit() {
     const cashInput = document.getElementById('splitCashInput');
     const mpesaInput = document.getElementById('splitMpesaInput');
     const display = document.getElementById('splitDisplay');
-    
     if (!cashInput || !mpesaInput || !display) return;
     
     const total = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0) - discountAmount;
@@ -360,8 +348,7 @@ function calculateSplit() {
     const sum = cash + mpesa;
     
     if (sum >= total) {
-        const change = sum - total;
-        display.innerHTML = `<div class="split-ok">✅ Total covered. Change: KES ${change.toFixed(2)}</div>`;
+        display.innerHTML = `<div class="split-ok">✅ Total covered. Change: KES ${(sum - total).toFixed(2)}</div>`;
     } else {
         display.innerHTML = `<div class="split-warning">⚠️ Remaining: KES ${(total - sum).toFixed(2)}</div>`;
     }
@@ -384,30 +371,21 @@ function autoFillSplit() {
     calculateSplit();
 }
 
-// ============================================================
-// DISCOUNT LOGIC
-// ============================================================
 function toggleDiscountInput() {
     const group = document.getElementById('discountInputGroup');
-    if (group) {
-        group.style.display = group.style.display === 'none' ? 'flex' : 'none';
-    }
+    if (group) group.style.display = group.style.display === 'none' ? 'flex' : 'none';
 }
 
 function applyDiscount() {
     const input = document.getElementById('discountInput');
     if (!input) return;
     const val = parseFloat(input.value);
-    if (isNaN(val) || val < 0) {
-        showToast('Enter a valid discount amount', 'error');
-        return;
-    }
+    if (isNaN(val) || val < 0) { showToast('Enter a valid discount amount', 'error'); return; }
     discountAmount = val;
     const row = document.getElementById('discountRow');
     const display = document.getElementById('discountDisplay');
     if (row) row.style.display = 'flex';
     if (display) display.textContent = `- KES ${val.toFixed(2)}`;
-    
     renderCart();
     toggleDiscountInput();
 }
@@ -418,13 +396,12 @@ function clearDiscount() {
     if (row) row.style.display = 'none';
     const input = document.getElementById('discountInput');
     if (input) input.value = '';
-    
     renderCart();
     toggleDiscountInput();
 }
 
 // ============================================================
-// CHECKOUT & M-PESA
+// CHECKOUT & M-PESA (THE 3-SECOND SIMULATION)
 // ============================================================
 async function checkout() {
     if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
@@ -435,14 +412,19 @@ async function checkout() {
     
     let paymentCash = 0;
     let paymentMpesa = 0;
+    let customerPhone = null;
     
     if (currentPaymentMethod === 'cash') {
         paymentCash = parseFloat(document.getElementById('paymentInput').value) || total;
     } else if (currentPaymentMethod === 'mpesa') {
         paymentMpesa = total;
+        customerPhone = document.getElementById('mpesaPhoneInput').value.trim();
+        if (!customerPhone) { showToast('Please enter customer phone number', 'error'); return; }
     } else if (currentPaymentMethod === 'split') {
         paymentCash = parseFloat(document.getElementById('splitCashInput').value) || 0;
         paymentMpesa = parseFloat(document.getElementById('splitMpesaInput').value) || 0;
+        customerPhone = document.getElementById('mpesaPhoneInput').value.trim();
+        if (paymentMpesa > 0 && !customerPhone) { showToast('Please enter customer phone number', 'error'); return; }
     }
     
     const salePayload = {
@@ -452,7 +434,8 @@ async function checkout() {
         total: total,
         paymentMethod: currentPaymentMethod,
         paymentCash: paymentCash,
-        paymentMpesa: paymentMpesa
+        paymentMpesa: paymentMpesa,
+        customerPhone: customerPhone
     };
 
     if (window.require && window.require('electron')) {
@@ -474,18 +457,23 @@ async function checkout() {
         let fakeMpesaReceipt = null;
 
         if ((currentPaymentMethod === 'mpesa' || currentPaymentMethod === 'split') && paymentMpesa > 0) {
-            showToast('Sending M-Pesa STK Push...', 'info');
-            const mpesaRes = await API.initiateMpesa('0712345678', paymentMpesa);
-            await new Promise(r => setTimeout(r, 3200));
-            const statusRes = await API.checkMpesaStatus(mpesaRes.checkoutRequestId);
-            if (statusRes.status === 'success') {
-                fakeMpesaReceipt = statusRes.mpesaReceipt;
-                showToast(`M-Pesa Received: ${fakeMpesaReceipt}`, 'success');
-            }
+            showToast(`Sending STK Push to ${customerPhone}...`, 'info');
+            
+            // Initiate the fake push
+            await API.initiateMpesa(customerPhone, paymentMpesa);
+            
+            // 🎯 WAIT 3 SECONDS (The simulation)
+            await new Promise(r => setTimeout(r, 3000));
+            
+            // Generate the fake receipt
+            fakeMpesaReceipt = 'Q' + Math.random().toString(36).substring(2, 10).toUpperCase();
+            showToast(`M-Pesa Received: ${fakeMpesaReceipt}`, 'success');
         }
 
-        const response = await API.createSale(salePayload);
+        // Save the sale with the phone number and fake receipt
+        const response = await API.createSale({ ...salePayload, mpesaReceipt: fakeMpesaReceipt });
         
+        // Show Receipt Modal
         showReceipt({
             receiptNo: response.receiptNo || 'R' + Date.now(),
             date: new Date().toISOString(),
@@ -495,7 +483,8 @@ async function checkout() {
             paymentCash: paymentCash,
             paymentMpesa: paymentMpesa,
             change: paymentCash > total ? paymentCash - total : 0,
-            mpesaReceipt: fakeMpesaReceipt
+            mpesaReceipt: fakeMpesaReceipt,
+            customerPhone: customerPhone
         });
 
         clearCart();
@@ -540,6 +529,9 @@ function showReceipt(receipt) {
     if (receipt.mpesaReceipt) {
         totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>M-Pesa Code:</span><span>${receipt.mpesaReceipt}</span></div>`;
     }
+    if (receipt.customerPhone) {
+        totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>Customer Phone:</span><span>${receipt.customerPhone}</span></div>`;
+    }
     if (receipt.change > 0) {
         totalHtml += `<div class="receipt-total-row" style="font-weight:bold; color:#27ae60; display:flex; justify-content:space-between;"><span>Change:</span><span>KES ${receipt.change.toFixed(2)}</span></div>`;
     }
@@ -548,16 +540,11 @@ function showReceipt(receipt) {
     modal.style.display = 'flex';
 }
 
-function closeReceipt() {
-    document.getElementById('receiptModal').style.display = 'none';
-}
-
-function printReceipt() {
-    window.print();
-}
+function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
+function printReceipt() { window.print(); }
 
 // ============================================================
-// UI HELPERS
+// UI HELPERS & EXPORTS
 // ============================================================
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -567,7 +554,6 @@ function showToast(message, type = 'info') {
     setTimeout(() => { toast.className = 'toast'; }, 3000);
 }
 
-// Expose ALL functions to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
