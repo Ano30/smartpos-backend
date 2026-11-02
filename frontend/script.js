@@ -30,7 +30,7 @@ async function initApp() {
             // If we have the data, show the app immediately
             showMainApp();
             
-            // Optionally verify in the background (uncomment if API.verify exists)
+            // Optionally verify in the background
             // API.verify().catch(() => handleLogout());
         } catch (err) {
             console.error('[App] Session parse error:', err);
@@ -176,7 +176,7 @@ function showMainApp() {
 }
 
 // ============================================================
-// NAVIGATION
+// NAVIGATION & MOBILE UI
 // ============================================================
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -187,6 +187,28 @@ function switchPage(pageId) {
     
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
+}
+
+function toggleMobileSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('mobileSidebarOverlay');
+    if (!sidebar) return;
+    sidebar.classList.toggle('mobile-open');
+    if (overlay) overlay.classList.toggle('active');
+}
+
+function togglePassword(fieldId, icon) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        field.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
 }
 
 // ============================================================
@@ -216,7 +238,7 @@ function renderProductGrid() {
 }
 
 // ============================================================
-// CART & CHECKOUT (WITH OFFLINE ELECTRON LOGIC)
+// CART & CHECKOUT
 // ============================================================
 function addToCart(productId) {
     const product = products.find(p => p.id === productId);
@@ -272,6 +294,86 @@ function renderCart() {
     if(totalEl) totalEl.textContent = `KES ${finalTotal.toFixed(2)}`;
 }
 
+function updateCartQty(productId, change) {
+    const item = cart.find(i => i.productId === productId);
+    if (!item) return;
+    if (change === -1 && item.quantity === 1) {
+        cart = cart.filter(i => i.productId !== productId);
+    } else {
+        item.quantity += change;
+    }
+    renderCart();
+}
+
+function clearCart() {
+    cart = [];
+    discountAmount = 0;
+    renderCart();
+    showToast('Cart cleared', 'info');
+}
+
+// ============================================================
+// PAYMENT & DISCOUNT CONTROLS
+// ============================================================
+function selectPaymentMethod(method) {
+    currentPaymentMethod = method;
+    
+    document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
+    const btn = document.querySelector(`.pay-method-btn[data-method="${method}"]`);
+    if (btn) btn.classList.add('active');
+    
+    document.querySelectorAll('.payment-view').forEach(view => view.classList.remove('active'));
+    const view = document.getElementById(`payment${method.charAt(0).toUpperCase() + method.slice(1)}View`);
+    if (view) view.classList.add('active');
+}
+
+function quickPayment(amount) {
+    const input = document.getElementById('paymentInput');
+    if (input) {
+        input.value = amount;
+        if (typeof calculateChange === 'function') calculateChange();
+    }
+}
+
+function toggleDiscountInput() {
+    const group = document.getElementById('discountInputGroup');
+    if (group) {
+        group.style.display = group.style.display === 'none' ? 'flex' : 'none';
+    }
+}
+
+function applyDiscount() {
+    const input = document.getElementById('discountInput');
+    if (!input) return;
+    const val = parseFloat(input.value);
+    if (isNaN(val) || val < 0) {
+        showToast('Enter a valid discount amount', 'error');
+        return;
+    }
+    discountAmount = val;
+    const row = document.getElementById('discountRow');
+    const display = document.getElementById('discountDisplay');
+    if (row) row.style.display = 'flex';
+    if (display) display.textContent = `- KES ${val.toFixed(2)}`;
+    
+    renderCart();
+    toggleDiscountInput();
+}
+
+function clearDiscount() {
+    discountAmount = 0;
+    const row = document.getElementById('discountRow');
+    if (row) row.style.display = 'none';
+    const input = document.getElementById('discountInput');
+    if (input) input.value = '';
+    
+    renderCart();
+    toggleDiscountInput();
+}
+
+// ============================================================
+// CHECKOUT (WITH OFFLINE ELECTRON LOGIC)
+// ============================================================
 async function checkout() {
     if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
 
@@ -317,23 +419,6 @@ async function checkout() {
     }
 }
 
-function clearCart() {
-    cart = [];
-    discountAmount = 0;
-    renderCart();
-}
-
-function updateCartQty(productId, change) {
-    const item = cart.find(i => i.productId === productId);
-    if (!item) return;
-    if (change === -1 && item.quantity === 1) {
-        cart = cart.filter(i => i.productId !== productId);
-    } else {
-        item.quantity += change;
-    }
-    renderCart();
-}
-
 // ============================================================
 // UI HELPERS
 // ============================================================
@@ -345,7 +430,9 @@ function showToast(message, type = 'info') {
     setTimeout(() => { toast.className = 'toast'; }, 3000);
 }
 
-// Expose functions to window for HTML onclick handlers
+// ============================================================
+// EXPOSE FUNCTIONS TO GLOBAL WINDOW
+// ============================================================
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
@@ -357,3 +444,10 @@ window.checkout = checkout;
 window.clearCart = clearCart;
 window.updateCartQty = updateCartQty;
 window.switchPage = switchPage;
+window.selectPaymentMethod = selectPaymentMethod;
+window.quickPayment = quickPayment;
+window.toggleDiscountInput = toggleDiscountInput;
+window.applyDiscount = applyDiscount;
+window.clearDiscount = clearDiscount;
+window.toggleMobileSidebar = toggleMobileSidebar;
+window.togglePassword = togglePassword;
