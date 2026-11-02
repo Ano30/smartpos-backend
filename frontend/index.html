@@ -358,9 +358,12 @@
                                 </div>
                             </div>
 
+                            <!-- 🎯 UPDATED M-PESA VIEW WITH PHONE INPUT -->
                             <div id="paymentMpesaView" class="payment-view">
                                 <div class="payment-section">
-                                    <p style="font-size:13px;color:#7f8c8d;text-align:center;padding:15px;">
+                                    <label style="font-size:12px;font-weight:600;color:#34495e;display:block;margin-bottom:5px;">Customer Phone Number</label>
+                                    <input type="tel" id="mpesaPhoneInput" placeholder="e.g. 0712345678" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:5px; margin-bottom:10px;">
+                                    <p style="font-size:13px;color:#7f8c8d;text-align:center;padding:5px;">
                                         <i class="fas fa-mobile-alt"></i> Customer will receive an STK Push prompt.
                                     </p>
                                 </div>
@@ -1241,65 +1244,6 @@
         </div>
     </div>
 
-    <!-- ============ M-PESA MODAL ============ -->
-    <div id="mpesaModal" class="modal">
-        <div class="modal-content mpesa-modal">
-            <div class="modal-header">
-                <h3><i class="fas fa-mobile-alt" style="color:#27ae60;"></i> M-Pesa Payment</h3>
-                <button class="modal-close" onclick="closeMpesaModal()"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div id="mpesaStep1" class="mpesa-step active">
-                    <div class="mpesa-icon-large"><i class="fas fa-mobile-alt"></i></div>
-                    <h4>Enter Customer Phone Number</h4>
-                    <p class="mpesa-info">The customer will receive a prompt on their phone.</p>
-                    <div class="mpesa-amount-display">
-                        <div class="label">Amount to Pay</div>
-                        <div class="amount" id="mpesaAmount">KES 0.00</div>
-                    </div>
-                    <div class="form-group">
-                        <label>Customer Phone Number</label>
-                        <input type="tel" id="mpesaPhone" placeholder="0712345678" maxlength="13">
-                    </div>
-                    <button class="btn-primary mpesa-btn" onclick="initiateMpesaPayment()">
-                        <i class="fas fa-paper-plane"></i> Send STK Push
-                    </button>
-                </div>
-                <div id="mpesaStep2" class="mpesa-step">
-                    <div class="mpesa-waiting">
-                        <div class="spinner-ring"></div>
-                        <h4>Waiting for Customer...</h4>
-                        <p>Prompt sent to <strong id="mpesaPhoneDisplay">0712345678</strong></p>
-                        <div class="mpesa-progress"><div class="mpesa-progress-bar" id="mpesaProgressBar"></div></div>
-                        <p class="mpesa-timer" id="mpesaTimer">Checking status... 0s</p>
-                    </div>
-                </div>
-                <div id="mpesaStep3" class="mpesa-step">
-                    <div class="mpesa-success">
-                        <div class="success-icon"><i class="fas fa-check-circle"></i></div>
-                        <h4>Payment Received!</h4>
-                        <p>M-Pesa receipt: <strong id="mpesaReceiptNo">-</strong></p>
-                        <p class="mpesa-amount-confirm" id="mpesaSuccessAmount">KES 0.00</p>
-                        <button class="btn-primary" onclick="completeMpesaSale()">
-                            <i class="fas fa-check"></i> Complete & Print
-                        </button>
-                    </div>
-                </div>
-                <div id="mpesaStep4" class="mpesa-step">
-                    <div class="mpesa-failed">
-                        <div class="failed-icon"><i class="fas fa-times-circle"></i></div>
-                        <h4>Payment Failed</h4>
-                        <p id="mpesaErrorMsg">The customer cancelled or payment timed out.</p>
-                        <div class="mpesa-actions">
-                            <button class="btn-secondary" onclick="retryMpesa()"><i class="fas fa-redo"></i> Retry</button>
-                            <button class="btn-secondary" onclick="closeMpesaModal()"><i class="fas fa-times"></i> Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- ============ PRODUCT OPTIONS MODAL ============ -->
     <div id="productOptionsModal" class="modal">
         <div class="modal-content product-options-modal">
@@ -1447,7 +1391,6 @@
     <div id="toast" class="toast"></div>
 
     <!-- Scripts -->
-    <!-- FIX: Local Chart.js to prevent mobile offline errors -->
     <script src="chart.umd.min.js"></script>
     <script src="sounds.js" defer></script>
     <script src="api.js" defer></script>
