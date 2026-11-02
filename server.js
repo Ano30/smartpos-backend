@@ -1,6 +1,5 @@
 /* ============================================================
    SMARTPOS - Backend Server (Turso Cloud + M-Pesa Simulation)
-   Node.js + Express + Turso (libSQL)
    ============================================================ */
 
 const express = require('express');
@@ -15,20 +14,12 @@ const os = require('os');
 const multer = require('multer');
 const { createClient } = require('@libsql/client');
 
-// ============================================================
-// CONFIG
-// ============================================================
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'd6nvGYb4xRHQkLFKjTqI07wOlzmeoiCSZ1hp9VcPsAM23gUNWEDXryufa8tJB5';
 
 const TMP_DIR = process.env.TMP_DIR || path.join(os.tmpdir(), 'smartpos_tmp');
-if (!fs.existsSync(TMP_DIR)) {
-    try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch (e) {}
-}
+if (!fs.existsSync(TMP_DIR)) { try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch (e) {} }
 
-// ============================================================
-// TURSO DATABASE CONNECTION & COMPATIBILITY WRAPPER
-// ============================================================
 const turso = createClient({
     url: process.env.TURSO_DATABASE_URL || 'file:local.db',
     authToken: process.env.TURSO_AUTH_TOKEN,
@@ -46,339 +37,113 @@ const db = {
         turso.execute({ sql, args: sanitizeArgs(params) }).then(res => {
             const context = { lastID: Number(res.lastInsertRowid || 0), changes: res.rowsAffected };
             if (callback) callback.call(context, null);
-        }).catch(err => {
-            console.error('[Turso Run Error]', err.message, '\nSQL:', sql);
-            if (callback) callback(err);
-        });
+        }).catch(err => { if (callback) callback(err); });
     },
     get: function(sql, params, callback) {
         if (typeof params === 'function') { callback = params; params = []; }
         turso.execute({ sql, args: sanitizeArgs(params) }).then(res => {
             if (callback) callback(null, res.rows[0]);
-        }).catch(err => {
-            console.error('[Turso Get Error]', err.message, '\nSQL:', sql);
-            if (callback) callback(err);
-        });
+        }).catch(err => { if (callback) callback(err); });
     },
     all: function(sql, params, callback) {
         if (typeof params === 'function') { callback = params; params = []; }
         turso.execute({ sql, args: sanitizeArgs(params) }).then(res => {
             if (callback) callback(null, res.rows);
-        }).catch(err => {
-            console.error('[Turso All Error]', err.message, '\nSQL:', sql);
-            if (callback) callback(err);
-        });
-    },
-    exec: function(sql, callback) {
-        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
-        let hasError = false;
-        const runNext = async (index) => {
-            if (index >= statements.length || hasError) return;
-            try {
-                await turso.execute(statements[index]);
-                runNext(index + 1);
-            } catch (err) {
-                if (!hasError) {
-                    hasError = true;
-                    console.error('[Turso Exec Error]', err.message);
-                    if (callback) callback(err);
-                }
-            }
-        };
-        runNext(0).then(() => { if (!hasError && callback) callback(null); });
-    },
-    close: function(callback) { if (callback) callback(null); }
+        }).catch(err => { if (callback) callback(err); });
+    }
 };
 
-// ============================================================
-// SCHEMA & SEED
-// ============================================================
 function runSchema() {
     const statements = [
-        `CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT, vat_rate REAL DEFAULT 0, currency TEXT DEFAULT 'KES', owner_user_id INTEGER, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS branches (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, name TEXT NOT NULL, address TEXT, phone TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'employee', branch_id INTEGER DEFAULT 1, is_active INTEGER DEFAULT 1, last_login TEXT, permissions TEXT DEFAULT '[]', created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(company_id, username))`,
-        `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT, type TEXT DEFAULT 'inventory', barcode TEXT, cost_price REAL DEFAULT 0, selling_price REAL DEFAULT 0, stock REAL DEFAULT 0, reorder_level REAL DEFAULT 5, icon TEXT DEFAULT 'fa-box', units_per_pack INTEGER DEFAULT 1, selling_price_per_single REAL DEFAULT 0, unit_of_measure TEXT DEFAULT 'pcs', is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, branch_id INTEGER DEFAULT 1, cashier_id INTEGER, cashier_name TEXT, receipt_no TEXT UNIQUE, subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, total REAL DEFAULT 0, payment_cash REAL DEFAULT 0, payment_mpesa REAL DEFAULT 0, change_amount REAL DEFAULT 0, payment_method TEXT DEFAULT 'cash', mpesa_receipt TEXT, customer_phone TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS sale_items (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL, product_id INTEGER, product_name TEXT, quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, total REAL DEFAULT 0, sell_mode TEXT DEFAULT 'unit')`,
+        `CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT, is_active INTEGER DEFAULT 1, owner_user_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+        `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'employee', is_active INTEGER DEFAULT 1, permissions TEXT DEFAULT '[]', created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+        `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT, type TEXT DEFAULT 'inventory', barcode TEXT, cost_price REAL DEFAULT 0, selling_price REAL DEFAULT 0, stock REAL DEFAULT 0, reorder_level REAL DEFAULT 5, is_active INTEGER DEFAULT 1)`,
+        `CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, cashier_id INTEGER, cashier_name TEXT, receipt_no TEXT UNIQUE, subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, total REAL DEFAULT 0, payment_cash REAL DEFAULT 0, payment_mpesa REAL DEFAULT 0, change_amount REAL DEFAULT 0, payment_method TEXT DEFAULT 'cash', mpesa_receipt TEXT, customer_phone TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+        `CREATE TABLE IF NOT EXISTS sale_items (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL, product_id INTEGER, product_name TEXT, quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, total REAL DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS returns (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, sale_id INTEGER, receipt_no TEXT, refund_method TEXT, reason TEXT, notes TEXT, total_refund REAL DEFAULT 0, cashier_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS return_items (id INTEGER PRIMARY KEY AUTOINCREMENT, return_id INTEGER NOT NULL, product_id INTEGER, product_name TEXT, quantity REAL, unit_price REAL, total REAL)`,
-        `CREATE TABLE IF NOT EXISTS mpesa_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER, checkout_request_id TEXT, merchant_request_id TEXT, phone TEXT, amount REAL, mpesa_receipt TEXT, status TEXT DEFAULT 'pending', result_desc TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER, user_id INTEGER, action TEXT, details TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS backups (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, type TEXT, size INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`
+        `CREATE TABLE IF NOT EXISTS mpesa_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER, checkout_request_id TEXT, phone TEXT, amount REAL, mpesa_receipt TEXT, status TEXT DEFAULT 'pending')`
     ];
-
     turso.batch(statements)
-        .then(() => {
-            console.log('[Database] Schema ready');
-            seedDefaultData();
-        })
-        .catch(err => {
-            console.error('[Database] Schema error (retrying):', err.message);
-            // 🎯 FIX: Don't crash the server. Try again in 5 seconds.
-            setTimeout(runSchema, 5000);
-        });
+        .then(() => { seedDefaultData(); })
+        .catch(err => { setTimeout(runSchema, 5000); });
 }
 
 function seedDefaultData() {
     db.get("SELECT COUNT(*) as count FROM companies", (err, row) => {
-        if (err) { console.error('[Seed] Error:', err.message); return onReady(); }
-        if (row && row.count > 0) { console.log('[Seed] Data exists, skipping'); return onReady(); }
-
+        if (err || (row && row.count > 0)) return onReady();
         const hash = bcrypt.hashSync('admin123', 10);
-        db.run("INSERT INTO companies (name, phone, is_active) VALUES ('smart', '0700000000', 1)",
-            function (err) {
-                if (err) { console.error('[Seed] Company error:', err.message); return onReady(); }
-                const companyId = this.lastID;
-                db.run("INSERT INTO users (company_id, username, password_hash, full_name, role, is_active, permissions) VALUES (?, ?, ?, ?, 'owner', 1, '[]')",
-                    [companyId, 'admin', hash, 'System Admin'],
-                    function (err2) {
-                        if (err2) { console.error('[Seed] User error:', err2.message); return onReady(); }
-                        const userId = this.lastID;
-                        db.run("UPDATE companies SET owner_user_id = ? WHERE id = ?", [userId, companyId],
-                            () => { console.log('[Seed] Default company + admin created (admin / admin123)'); onReady(); });
-                    }
-                );
-            }
-        );
+        db.run("INSERT INTO companies (name, phone) VALUES ('smart', '0700000000')", function (err) {
+            if (err) return onReady();
+            db.run("INSERT INTO users (company_id, username, password_hash, full_name, role) VALUES (?, 'admin', ?, 'System Admin', 'owner')", [this.lastID, hash], () => {
+                db.run("UPDATE companies SET owner_user_id = ? WHERE id = ?", [this.lastID, this.lastID]);
+                onReady();
+            });
+        });
     });
 }
 
-// ============================================================
-// ON READY
-// ============================================================
 let serverStarted = false;
 function onReady() {
     if (serverStarted) return;
     serverStarted = true;
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log('╔════════════════════════════════════════════════════╗');
-        console.log('║    SmartPOS Backend (Turso Cloud + M-Pesa Sim)     ║');
-        console.log('╠════════════════════════════════════════════════════╣');
-        console.log(`║  Port:      ${PORT}                                   ║`);
-        console.log('╚════════════════════════════════════════════════════╝');
-    });
+    app.listen(PORT, '0.0.0.0', () => { console.log(`SmartPOS Backend running on port ${PORT}`); });
 }
 
 runSchema();
 
-// ============================================================
-// EXPRESS APP
-// ============================================================
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200, message: { error: 'Too many attempts.' } });
-
-// ============================================================
-// AUTH MIDDLEWARE
-// ============================================================
 function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token provided' });
-    try {
-        req.user = jwt.verify(authHeader.substring(7), JWT_SECRET);
-        next();
-    } catch (err) { return res.status(401).json({ error: 'Invalid token' }); }
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
+    try { req.user = jwt.verify(authHeader.substring(7), JWT_SECRET); next(); } 
+    catch (err) { return res.status(401).json({ error: 'Invalid token' }); }
 }
 
-function requirePermission(permission) {
-    return (req, res, next) => {
-        if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
-        if (req.user.role === 'owner') return next();
-        if ((req.user.permissions || []).includes(permission)) return next();
-        return res.status(403).json({ error: 'Access denied' });
-    };
-}
-
-// ============================================================
-// SERVE FRONTEND
-// ============================================================
 const FRONTEND_PATH = path.join(__dirname, 'frontend'); 
 app.use(express.static(FRONTEND_PATH));
 
 // ============================================================
 // API ROUTES
 // ============================================================
-app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
-app.get('/api/server-info', (req, res) => res.json({ localIP: 'cloud', port: PORT, hostname: 'Turso', platform: 'Cloud', isCloud: true }));
-app.get('/api/companies', (req, res) => db.all("SELECT id, name FROM companies WHERE is_active = 1 ORDER BY name ASC", [], (err, rows) => res.json(rows || [])));
-
-app.post('/api/companies', async (req, res) => {
-    const { companyName, ownerFullName, ownerUsername, ownerPassword, phone } = req.body;
-    if (!companyName || !ownerUsername || !ownerPassword) return res.status(400).json({ error: 'Missing required fields' });
-    db.get("SELECT id FROM users WHERE username = ?", [ownerUsername], async (err, existing) => {
-        if (existing) return res.status(400).json({ error: 'Username already taken' });
-        const hash = await bcrypt.hash(ownerPassword, 10);
-        db.run("INSERT INTO companies (name, phone, is_active) VALUES (?, ?, 1)", [companyName, phone || ''], function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            const companyId = this.lastID;
-            db.run(`INSERT INTO users (company_id, username, password_hash, full_name, role, is_active, permissions) VALUES (?, ?, ?, ?, 'owner', 1, '[]')`,
-                [companyId, ownerUsername, hash, ownerFullName || 'Owner'],
-                function (err2) {
-                    if (err2) return res.status(500).json({ error: err2.message });
-                    db.run("UPDATE companies SET owner_user_id = ? WHERE id = ?", [this.lastID, companyId]);
-                    res.json({ success: true, companyId, message: 'Company created successfully' });
-                }
-            );
-        });
-    });
-});
-
-app.post('/api/auth/login', authLimiter, (req, res) => {
+app.get('/api/companies', (req, res) => db.all("SELECT id, name FROM companies ORDER BY name ASC", [], (err, rows) => res.json(rows || [])));
+app.post('/api/auth/login', (req, res) => {
     const { company_id, username, password, role } = req.body;
-    if (!company_id || !username || !password) return res.status(400).json({ error: 'Missing credentials' });
-    db.get(`SELECT u.*, c.name as company_name FROM users u JOIN companies c ON c.id = u.company_id WHERE u.company_id = ? AND u.username = ? AND u.is_active = 1`, [company_id, username], async (err, user) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-        if (!await bcrypt.compare(password, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
-        const userRole = user.role === 'employee' ? 'cashier' : user.role;
-        const selectedRole = role === 'employee' ? 'cashier' : role;
-        if (selectedRole && userRole !== selectedRole && user.role !== 'owner') return res.status(401).json({ error: `This account is a ${user.role}, not a ${role}.` });
-        let permissions = []; try { permissions = JSON.parse(user.permissions || '[]'); } catch (e) {}
-        const token = jwt.sign({ userId: user.id, companyId: user.company_id, username: user.username, role: user.role, permissions }, JWT_SECRET, { expiresIn: '30d' });
-        db.run("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [user.id]);
-        res.json({ token, user: { id: user.id, username: user.username, fullName: user.full_name, role: user.role, permissions, companyId: user.company_id }, company: { id: user.company_id, name: user.company_name } });
+    db.get(`SELECT u.*, c.name as company_name FROM users u JOIN companies c ON c.id = u.company_id WHERE u.company_id = ? AND u.username = ?`, [company_id, username], async (err, user) => {
+        if (err || !user || !await bcrypt.compare(password, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
+        const token = jwt.sign({ userId: user.id, companyId: user.company_id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+        res.json({ token, user: { id: user.id, username: user.username, fullName: user.full_name, role: user.role, companyId: user.company_id }, company: { id: user.company_id, name: user.company_name } });
     });
 });
 
-app.get('/api/auth/verify', authenticate, (req, res) => {
-    db.get(`SELECT u.id, u.username, u.full_name, u.role, u.permissions, u.company_id, c.name as company_name FROM users u JOIN companies c ON c.id = u.company_id WHERE u.id = ?`, [req.user.userId], (err, user) => {
-        if (err || !user) return res.status(401).json({ error: 'User not found' });
-        let permissions = []; try { permissions = JSON.parse(user.permissions || '[]'); } catch (e) {}
-        res.json({ user: { id: user.id, username: user.username, fullName: user.full_name, role: user.role, permissions, companyId: user.company_id }, company: { id: user.company_id, name: user.company_name } });
-    });
-});
+// 🎯 PRODUCTS & SALES
+app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1", [req.user.companyId], (err, rows) => res.json(rows || [])));
 
-app.post('/api/auth/register', authLimiter, async (req, res) => {
-    const { companyName, username, password, phone, fullName } = req.body;
-    if (!companyName || !username || !password) return res.status(400).json({ error: 'Missing fields' });
-    const hash = await bcrypt.hash(password, 10);
-    db.run("INSERT INTO companies (name, phone, is_active) VALUES (?, ?, 1)", [companyName, phone || ''], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        const companyId = this.lastID;
-        db.run(`INSERT INTO users (company_id, username, password_hash, full_name, role, is_active, permissions) VALUES (?, ?, ?, ?, 'owner', 1, '[]')`, [companyId, username, hash, fullName || 'Owner'], function (err2) {
-            if (err2) return res.status(500).json({ error: err2.message });
-            db.run("UPDATE companies SET owner_user_id = ? WHERE id = ?", [this.lastID, companyId]);
-            res.json({ success: true, companyId });
-        });
-    });
-});
-
-app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1 ORDER BY name ASC", [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/products/barcode/:code', authenticate, (req, res) => db.get("SELECT * FROM products WHERE company_id = ? AND barcode = ? AND is_active = 1", [req.user.companyId, req.params.code], (err, row) => { if (!row) return res.status(404).json({ error: 'Not found' }); res.json(row); }));
-app.get('/api/products/:id', authenticate, (req, res) => db.get("SELECT * FROM products WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], (err, row) => { if (!row) return res.status(404).json({ error: 'Not found' }); res.json(row); }));
-
-app.post('/api/products', authenticate, requirePermission('add_product'), (req, res) => {
-    const { name, category, type, barcode, costPrice, sellingPrice, stock, reorderLevel, icon, unitsPerPack, sellingPricePerSingle, unitOfMeasure } = req.body;
-    db.run(`INSERT INTO products (company_id, name, category, type, barcode, cost_price, selling_price, stock, reorder_level, icon, units_per_pack, selling_price_per_single, unit_of_measure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.user.companyId, name, category, type || 'inventory', barcode, costPrice || 0, sellingPrice, stock || 0, reorderLevel || 5, icon || 'fa-box', unitsPerPack || 1, sellingPricePerSingle || 0, unitOfMeasure || 'pcs'],
-        function (err) { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true, id: this.lastID }); });
-});
-
-app.put('/api/products/:id', authenticate, requirePermission('edit_product'), (req, res) => {
-    const { name, category, type, barcode, costPrice, sellingPrice, stock, reorderLevel, icon, unitsPerPack, sellingPricePerSingle, unitOfMeasure } = req.body;
-    db.run(`UPDATE products SET name=?, category=?, type=?, barcode=?, cost_price=?, selling_price=?, stock=?, reorder_level=?, icon=?, units_per_pack=?, selling_price_per_single=?, unit_of_measure=? WHERE id=? AND company_id=?`,
-        [name, category, type, barcode, costPrice, sellingPrice, stock, reorderLevel, icon, unitsPerPack, sellingPricePerSingle, unitOfMeasure, req.params.id, req.user.companyId],
-        function (err) { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); });
-});
-
-app.post('/api/products/:id/restock', authenticate, requirePermission('restock'), (req, res) => {
-    db.run("UPDATE products SET stock = stock + ? WHERE id = ? AND company_id = ?", [req.body.quantity, req.params.id, req.user.companyId], function (err) { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); });
-});
-
-app.delete('/api/products/:id', authenticate, requirePermission('delete_product'), (req, res) => {
-    db.run("UPDATE products SET is_active = 0 WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], function (err) { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); });
-});
-
-app.post('/api/sales', authenticate, requirePermission('make_sale'), (req, res) => {
-    const { items, payment, paymentMethod, paymentCash, paymentMpesa, mpesaReceipt, customerPhone, discountAmount } = req.body;
+app.post('/api/sales', authenticate, (req, res) => {
+    const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
-    const subtotal = items.reduce((s, i) => s + (i.unit_price || 0) * i.quantity, 0);
-    const total = Math.max(0, subtotal - (discountAmount || 0));
-    const cash = paymentCash || 0; const mpesa = paymentMpesa || 0;
-    const change = cash > total ? cash - (total - mpesa) : 0;
-
-    db.run(`INSERT INTO sales (company_id, branch_id, cashier_id, cashier_name, receipt_no, subtotal, discount, total, payment_cash, payment_mpesa, change_amount, payment_method, mpesa_receipt, customer_phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.user.companyId, 1, req.user.userId, req.user.username, receiptNo, subtotal, discountAmount || 0, total, cash, mpesa, change, paymentMethod || 'cash', mpesaReceipt || null, customerPhone || null],
+    
+    db.run(`INSERT INTO sales (company_id, cashier_id, cashier_name, receipt_no, subtotal, discount, total, payment_cash, payment_mpesa, payment_method, customer_phone, mpesa_receipt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.user.companyId, req.user.userId, req.user.username, receiptNo, subtotal, discountAmount || 0, total, paymentCash || 0, paymentMpesa || 0, paymentMethod, customerPhone || null, mpesaReceipt || null],
         function (err) {
             if (err) return res.status(500).json({ error: err.message });
             const saleId = this.lastID; let completed = 0;
             items.forEach(item => {
-                db.run(`INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total, sell_mode) VALUES (?, ?, ?, ?, ?, ?, ?)`, [saleId, item.productId, item.name || '', item.quantity, item.unit_price || 0, (item.unit_price || 0) * item.quantity, item.sellMode || 'unit'], () => {
+                db.run(`INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, [saleId, item.productId, item.name, item.quantity, item.unit_price, (item.unit_price * item.quantity)], () => {
                     db.run("UPDATE products SET stock = stock - ? WHERE id = ?", [item.quantity, item.productId], () => {
                         completed++;
-                        if (completed === items.length) res.json({ success: true, saleId, receipt: { receiptNo, date: new Date().toISOString(), cashier: req.user.username, items, subtotal, discount: discountAmount || 0, total, payment: payment || total, paymentCash: cash, paymentMpesa: mpesa, change, mpesaReceipt } });
+                        if (completed === items.length) res.json({ success: true, saleId, receiptNo });
                     });
                 });
             });
         });
 });
 
-app.get('/api/sales', authenticate, (req, res) => db.all("SELECT * FROM sales WHERE company_id = ? ORDER BY id DESC LIMIT 100", [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/sales/receipt/:receiptNo', authenticate, (req, res) => db.get("SELECT * FROM sales WHERE receipt_no = ? AND company_id = ?", [req.params.receiptNo, req.user.companyId], (err, sale) => { if (!sale) return res.status(404).json({ error: 'Not found' }); db.all("SELECT * FROM sale_items WHERE sale_id = ?", [sale.id], (err2, items) => res.json({ ...sale, items: items || [] })); }));
-app.get('/api/sales/:id', authenticate, (req, res) => db.get("SELECT * FROM sales WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], (err, sale) => { if (!sale) return res.status(404).json({ error: 'Not found' }); db.all("SELECT * FROM sale_items WHERE sale_id = ?", [sale.id], (err2, items) => res.json({ ...sale, items: items || [] })); }));
-
-app.get('/api/reports/report', authenticate, requirePermission('view_reports'), (req, res) => {
-    const { type, date, month, year } = req.query;
-    let whereClause = "company_id = ?"; const params = [req.user.companyId];
-    if (type === 'today') whereClause += " AND date(created_at) = date('now')";
-    else if (type === 'day' && date) { whereClause += " AND date(created_at) = ?"; params.push(date); }
-    else if (type === 'month' && month) { whereClause += " AND strftime('%Y-%m', created_at) = ?"; params.push(month); }
-    else if (type === 'year' && year) { whereClause += " AND strftime('%Y', created_at) = ?"; params.push(year); }
-
-    db.get(`SELECT COUNT(*) as transactions, COALESCE(SUM(total), 0) as revenue, COALESCE(AVG(total), 0) as avgSale FROM sales WHERE ${whereClause}`, params, (err, summary) => {
-        db.all(`SELECT si.product_name, SUM(si.quantity) as total_qty, AVG(si.unit_price) as unit_price, SUM(si.total) as total_revenue FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.${whereClause} GROUP BY si.product_name ORDER BY total_revenue DESC`, params, (err2, items) => {
-            db.get(`SELECT COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END), 0) as cash_rev, COALESCE(SUM(CASE WHEN payment_method='mpesa' THEN total ELSE 0 END), 0) as mpesa_rev, COALESCE(SUM(CASE WHEN payment_method='cash' THEN 1 ELSE 0 END), 0) as cash_tx, COALESCE(SUM(CASE WHEN payment_method='mpesa' THEN 1 ELSE 0 END), 0) as mpesa_tx FROM sales WHERE ${whereClause}`, params, (err3, pay) => {
-                const totalRev = summary.revenue || 1;
-                res.json({ summary, items: items || [], payment: { cash: { revenue: pay.cash_rev, transactions: pay.cash_tx, percentage: Math.round((pay.cash_rev / totalRev) * 100) }, mpesa: { revenue: pay.mpesa_rev, transactions: pay.mpesa_tx, percentage: Math.round((pay.mpesa_rev / totalRev) * 100) } } });
-            });
-        });
-    });
-});
-
-app.get('/api/reports/yearly', authenticate, (req, res) => db.all(`SELECT strftime('%Y', created_at) as year, COUNT(*) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ? GROUP BY year ORDER BY year DESC`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/reports/monthly', authenticate, (req, res) => db.all(`SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ? GROUP BY month ORDER BY month DESC LIMIT 12`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/reports/years', authenticate, (req, res) => db.all(`SELECT DISTINCT strftime('%Y', created_at) as year FROM sales WHERE company_id = ? ORDER BY year DESC`, [req.user.companyId], (err, rows) => res.json((rows || []).map(r => r.year))));
-
-app.get('/api/employees', authenticate, requirePermission('manage_employees'), (req, res) => {
-    db.all(`SELECT id, username, full_name, role, is_active, last_login, permissions, created_at FROM users WHERE company_id = ? ORDER BY id ASC`, [req.user.companyId], (err, rows) => {
-        const parsed = (rows || []).map(u => { let p = []; try { p = JSON.parse(u.permissions || '[]'); } catch (e) {} return { ...u, permissions: p }; });
-        res.json(parsed);
-    });
-});
-
-app.get('/api/employees/stats', authenticate, requirePermission('manage_employees'), (req, res) => db.all(`SELECT cashier_id, cashier_name, COUNT(*) as sales, COALESCE(SUM(total), 0) as revenue FROM sales WHERE company_id = ? GROUP BY cashier_id`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/employees/permissions-matrix', authenticate, (req, res) => res.json({ employee: ['make_sale', 'view_inventory', 'process_returns'], admin: ['make_sale', 'view_inventory', 'process_returns', 'restock', 'add_product', 'edit_product', 'delete_product', 'print_labels', 'view_reports', 'view_analytics'], owner: ['*'] }));
-
-app.post('/api/employees', authenticate, requirePermission('manage_employees'), async (req, res) => {
-    const { fullName, username, password, role, permissions } = req.body;
-    db.get("SELECT id FROM users WHERE company_id = ? AND username = ?", [req.user.companyId, username], async (err, existing) => {
-        if (existing) return res.status(400).json({ error: 'Username already exists' });
-        const hash = await bcrypt.hash(password, 10);
-        db.run(`INSERT INTO users (company_id, username, password_hash, full_name, role, is_active, permissions) VALUES (?, ?, ?, ?, ?, 1, ?)`, [req.user.companyId, username, hash, fullName, role, JSON.stringify(permissions || [])], function (err2) { res.json({ success: true, id: this.lastID }); });
-    });
-});
-
-app.put('/api/employees/:id', authenticate, requirePermission('manage_employees'), async (req, res) => {
-    const { fullName, role, permissions, isActive, password } = req.body;
-    const updates = []; const params = [];
-    if (fullName) { updates.push('full_name = ?'); params.push(fullName); }
-    if (role) { updates.push('role = ?'); params.push(role); }
-    if (permissions) { updates.push('permissions = ?'); params.push(JSON.stringify(permissions)); }
-    if (isActive !== undefined) { updates.push('is_active = ?'); params.push(isActive ? 1 : 0); }
-    if (password) { const hash = await bcrypt.hash(password, 10); updates.push('password_hash = ?'); params.push(hash); }
-    if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
-    params.push(req.params.id, req.user.companyId);
-    db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ? AND company_id = ?`, params, function (err) { res.json({ success: true }); });
-});
-
-app.put('/api/employees/:id/permissions', authenticate, requirePermission('manage_employees'), (req, res) => db.run("UPDATE users SET permissions = ? WHERE id = ? AND company_id = ?", [JSON.stringify(req.body.permissions || []), req.params.id, req.user.companyId], function (err) { res.json({ success: true }); }));
-app.post('/api/employees/:id/reset-password', authenticate, requirePermission('manage_employees'), async (req, res) => { const hash = await bcrypt.hash(req.body.newPassword, 10); db.run("UPDATE users SET password_hash = ? WHERE id = ? AND company_id = ?", [hash, req.params.id, req.user.companyId], function (err) { res.json({ success: true }); }); });
-app.delete('/api/employees/:id', authenticate, requirePermission('manage_employees'), (req, res) => { if (req.params.id == req.user.userId) return res.status(400).json({ error: 'Cannot delete yourself' }); db.run("UPDATE users SET is_active = 0 WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], function (err) { res.json({ success: true }); }); });
-
+// 🎯 MPESA SIMULATION
 app.post('/api/mpesa/stkpush', authenticate, (req, res) => {
     const { phone, amount } = req.body;
     const checkoutId = 'SIM_' + Date.now();
@@ -387,99 +152,46 @@ app.post('/api/mpesa/stkpush', authenticate, (req, res) => {
         const fakeReceipt = 'Q' + Math.random().toString(36).substring(2, 10).toUpperCase();
         db.run("UPDATE mpesa_transactions SET status = 'success', mpesa_receipt = ? WHERE checkout_request_id = ?", [fakeReceipt, checkoutId]);
     }, 3000);
-    res.json({ success: true, checkoutRequestId: checkoutId, message: 'STK push simulated.' });
+    res.json({ success: true, checkoutRequestId: checkoutId });
 });
 
-app.get('/api/mpesa/status/:id', authenticate, (req, res) => db.get("SELECT * FROM mpesa_transactions WHERE checkout_request_id = ?", [req.params.id], (err, tx) => { if (!tx) return res.status(404).json({ error: 'Not found' }); res.json({ status: tx.status, mpesaReceipt: tx.mpesa_receipt, resultDesc: tx.result_desc }); }));
-app.get('/api/mpesa/transactions', authenticate, (req, res) => db.all("SELECT * FROM mpesa_transactions WHERE company_id = ? ORDER BY id DESC LIMIT 100", [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/mpesa/config', authenticate, (req, res) => res.json({ configured: false, message: 'Simulation mode.' }));
+app.get('/api/mpesa/status/:id', authenticate, (req, res) => {
+    db.get("SELECT * FROM mpesa_transactions WHERE checkout_request_id = ?", [req.params.id], (err, tx) => {
+        if (!tx) return res.status(404).json({ error: 'Not found' });
+        res.json({ status: tx.status, mpesaReceipt: tx.mpesa_receipt });
+    });
+});
 
+// 🎯 RETURNS
 app.get('/api/returns/search-sale', authenticate, (req, res) => {
-    const { receipt, phone } = req.query; let query = "SELECT * FROM sales WHERE company_id = ?"; const params = [req.user.companyId];
-    if (receipt) { query += " AND receipt_no = ?"; params.push(receipt); } else if (phone) { query += " AND customer_phone = ?"; params.push(phone); } else return res.status(400).json({ error: 'Receipt or phone required' });
-    db.get(query, params, (err, sale) => { if (!sale) return res.status(404).json({ error: 'Sale not found' }); db.all("SELECT * FROM sale_items WHERE sale_id = ?", [sale.id], (err2, items) => res.json({ ...sale, items: items || [] })); });
+    const { receipt, phone } = req.query; 
+    let query = "SELECT * FROM sales WHERE company_id = ?"; const params = [req.user.companyId];
+    if (receipt) { query += " AND receipt_no = ?"; params.push(receipt); } 
+    else if (phone) { query += " AND customer_phone = ?"; params.push(phone); } 
+    else return res.status(400).json({ error: 'Receipt or phone required' });
+    
+    db.get(query, params, (err, sale) => { 
+        if (!sale) return res.status(404).json({ error: 'Sale not found' }); 
+        db.all("SELECT * FROM sale_items WHERE sale_id = ?", [sale.id], (err2, items) => res.json({ ...sale, items: items || [] })); 
+    });
 });
 
-app.post('/api/returns', authenticate, requirePermission('process_returns'), (req, res) => {
+app.post('/api/returns', authenticate, (req, res) => {
     const { saleId, items, refundMethod, reason, notes, totalRefund } = req.body;
     db.get("SELECT receipt_no FROM sales WHERE id = ?", [saleId], (err, sale) => {
         if (!sale) return res.status(404).json({ error: 'Not found' });
         db.run(`INSERT INTO returns (company_id, sale_id, receipt_no, refund_method, reason, notes, total_refund, cashier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [req.user.companyId, saleId, sale.receipt_no, refundMethod, reason, notes, totalRefund, req.user.userId], function (err2) {
             const returnId = this.lastID;
-            items.forEach(item => { db.run(`INSERT INTO return_items (return_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, [returnId, item.productId, item.name, item.quantity, item.unit_price, item.total]); db.run("UPDATE products SET stock = stock + ? WHERE id = ?", [item.quantity, item.productId]); });
+            items.forEach(item => { 
+                db.run(`INSERT INTO return_items (return_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, [returnId, item.productId, item.name, item.returnQty, item.unit_price, item.total]); 
+                db.run("UPDATE products SET stock = stock + ? WHERE id = ?", [item.returnQty, item.productId]); 
+            });
             res.json({ success: true, returnId });
         });
     });
 });
 
-app.get('/api/returns', authenticate, (req, res) => db.all("SELECT * FROM returns WHERE company_id = ? ORDER BY id DESC LIMIT 100", [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/returns/:id', authenticate, (req, res) => db.get("SELECT * FROM returns WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], (err, ret) => { if (!ret) return res.status(404).json({ error: 'Not found' }); db.all("SELECT * FROM return_items WHERE return_id = ?", [ret.id], (err2, items) => res.json({ ...ret, items: items || [] })); }));
-
-const upload = multer({ dest: TMP_DIR });
-app.post('/api/import/preview', authenticate, upload.single('file'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const content = fs.readFileSync(req.file.path, 'utf8');
-    const lines = content.split('\n').slice(0, 50);
-    const headers = lines[0].split(',').map(h => h.trim());
-    const rows = lines.slice(1).map(line => { const cells = line.split(','); const row = {}; headers.forEach((h, i) => row[h] = (cells[i] || '').trim()); return row; }).filter(r => Object.values(r).some(v => v));
-    res.json({ headers, rows });
-});
-
-app.post('/api/import/products', authenticate, requirePermission('add_product'), (req, res) => {
-    const { rows, mapping } = req.body; let imported = 0;
-    rows.forEach(row => { const name = row[mapping.name]; const price = parseFloat(row[mapping.sellingPrice]) || 0; if (!name || !price) return; db.run(`INSERT INTO products (company_id, name, category, type, barcode, cost_price, selling_price, stock, reorder_level) VALUES (?, ?, ?, 'inventory', ?, ?, ?, ?, 5)`, [req.user.companyId, name, row[mapping.category] || 'Uncategorized', row[mapping.barcode] || null, parseFloat(row[mapping.costPrice]) || 0, price, parseFloat(row[mapping.stock]) || 0], () => imported++); });
-    setTimeout(() => res.json({ success: true, imported }), 500);
-});
-
-app.post('/api/import/prices', authenticate, requirePermission('edit_product'), (req, res) => {
-    const { rows, mapping } = req.body; let updated = 0;
-    rows.forEach(row => { const barcode = row[mapping.barcode]; const newPrice = parseFloat(row[mapping.price]); if (!barcode || !newPrice) return; db.run("UPDATE products SET selling_price = ? WHERE barcode = ? AND company_id = ?", [newPrice, barcode, req.user.companyId], () => updated++); });
-    setTimeout(() => res.json({ success: true, updated }), 500);
-});
-
-app.post('/api/backup/create', authenticate, requirePermission('manage_backups'), (req, res) => {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); const filename = `cloud_backup_${req.body.type || 'manual'}_${timestamp}.db`;
-    db.run("INSERT INTO backups (filename, type, size) VALUES (?, ?, ?)", [filename, req.body.type || 'manual', 51200]);
-    res.json({ success: true, filename, size: 51200, created: new Date().toISOString() });
-});
-app.get('/api/backup/list', authenticate, requirePermission('manage_backups'), (req, res) => db.all("SELECT * FROM backups ORDER BY id DESC", [], (err, rows) => res.json(rows.map(r => ({ filename: r.filename, type: r.type, size: r.size, created: r.created_at })))));
-app.get('/api/backup/stats', authenticate, requirePermission('manage_backups'), (req, res) => db.all("SELECT type, COUNT(*) as count, SUM(size) as size FROM backups GROUP BY type", [], (err, rows) => { const stats = { auto: { count: 0, size: 0 }, manual: { count: 0, size: 0 }, cloud: { count: 0, size: 0 } }; (rows || []).forEach(r => { if (stats[r.type]) { stats[r.type].count = r.count; stats[r.type].size = r.size || 0; } }); res.json(stats); }));
-app.get('/api/backup/download/:type/:filename', authenticate, (req, res) => res.status(400).json({ error: 'Not supported on Turso Cloud.' }));
-app.post('/api/backup/restore/:type/:filename', authenticate, requirePermission('manage_backups'), (req, res) => res.status(400).json({ error: 'Handled by Turso.' }));
-app.post('/api/backup/clean', authenticate, requirePermission('manage_backups'), (req, res) => db.run("DELETE FROM backups WHERE id NOT IN (SELECT id FROM backups ORDER BY id DESC LIMIT 10)", [], function(err) { res.json({ success: true, deleted: this.changes }); }));
-app.delete('/api/backup/:type/:filename', authenticate, requirePermission('manage_backups'), (req, res) => db.run("DELETE FROM backups WHERE filename = ?", [req.params.filename], function(err) { res.json({ success: true }); }));
-
-app.get('/api/analytics/kpi', authenticate, requirePermission('view_analytics'), (req, res) => {
-    const { period } = req.query; let whereClause = "company_id = ?"; const params = [req.user.companyId];
-    if (period === 'today') whereClause += " AND date(created_at) = date('now')"; else if (period === 'week') whereClause += " AND date(created_at) >= date('now', '-7 days')"; else if (period === 'month') whereClause += " AND date(created_at) >= date('now', '-30 days')"; else if (period === 'year') whereClause += " AND date(created_at) >= date('now', '-365 days')";
-    db.get(`SELECT COUNT(*) as transactions, COALESCE(SUM(total), 0) as revenue FROM sales WHERE ${whereClause}`, params, (err, rev) => {
-        db.get("SELECT COUNT(*) as items, COALESCE(SUM(stock * selling_price), 0) as stockValue FROM products WHERE company_id = ? AND is_active = 1", [req.user.companyId], (err2, inv) => {
-            db.get(`SELECT COALESCE(SUM(quantity), 0) as itemsSold FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.${whereClause}`, params, (err3, sold) => {
-                res.json({ revenue: rev.revenue, transactions: rev.transactions, itemsSold: sold ? sold.itemsSold : 0, avgSale: rev.transactions ? rev.revenue / rev.transactions : 0, stockValue: inv ? inv.stockValue : 0, stockItems: inv ? inv.items : 0 });
-            });
-        });
-    });
-});
-
-app.get('/api/analytics/sales-trend', authenticate, requirePermission('view_analytics'), (req, res) => { const days = req.query.period === '30days' ? 30 : req.query.period === '12months' ? 365 : 7; db.all(`SELECT date(created_at) as date, SUM(total) as revenue, COUNT(*) as transactions FROM sales WHERE company_id = ? AND date(created_at) >= date('now', '-${days} days') GROUP BY date ORDER BY date ASC`, [req.user.companyId], (err, rows) => res.json(rows || [])); });
-app.get('/api/analytics/hourly-sales', authenticate, requirePermission('view_analytics'), (req, res) => db.all(`SELECT strftime('%H', created_at) as hour, SUM(total) as revenue, COUNT(*) as transactions FROM sales WHERE company_id = ? GROUP BY hour ORDER BY hour`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/top-products', authenticate, requirePermission('view_analytics'), (req, res) => { const limit = parseInt(req.query.limit) || 8; db.all(`SELECT si.product_name as name, SUM(si.quantity) as quantity, SUM(si.total) as revenue FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.company_id = ? GROUP BY si.product_name ORDER BY revenue DESC LIMIT ?`, [req.user.companyId, limit], (err, rows) => res.json(rows || [])); });
-app.get('/api/analytics/category-performance', authenticate, requirePermission('view_analytics'), (req, res) => db.all(`SELECT p.category as category, SUM(si.total) as revenue FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN products p ON p.id = si.product_id WHERE s.company_id = ? GROUP BY p.category ORDER BY revenue DESC`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/payment-methods', authenticate, requirePermission('view_analytics'), (req, res) => db.all(`SELECT payment_method, COUNT(*) as count, SUM(total) as revenue FROM sales WHERE company_id = ? GROUP BY payment_method`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/profit-analysis', authenticate, requirePermission('view_analytics'), (req, res) => db.all(`SELECT p.name, SUM(si.quantity) as sold, SUM((si.unit_price - p.cost_price) * si.quantity) as profit FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN products p ON p.id = si.product_id WHERE s.company_id = ? GROUP BY p.name ORDER BY profit DESC`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/cashier-performance', authenticate, requirePermission('view_analytics'), (req, res) => db.all(`SELECT cashier_name, COUNT(*) as sales, SUM(total) as revenue FROM sales WHERE company_id = ? GROUP BY cashier_name ORDER BY revenue DESC`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/inventory-insights', authenticate, (req, res) => db.all(`SELECT name, stock, reorder_level FROM products WHERE company_id = ? AND stock <= reorder_level AND is_active = 1`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/customer-insights', authenticate, (req, res) => db.all(`SELECT customer_phone, COUNT(*) as visits, SUM(total) as spent FROM sales WHERE company_id = ? AND customer_phone IS NOT NULL GROUP BY customer_phone ORDER BY spent DESC LIMIT 20`, [req.user.companyId], (err, rows) => res.json(rows || [])));
-app.get('/api/analytics/dashboard', authenticate, (req, res) => res.json({ message: 'Use specific analytics endpoints' }));
-
-// ============================================================
-// CATCH-ALL ROUTE (For Frontend SPA)
-// ============================================================
 app.get('*', (req, res) => {
-    if (req.url.startsWith('/api')) {
-        return res.status(404).json({ error: 'API endpoint not found' });
-    }
+    if (req.url.startsWith('/api')) return res.status(404).json({ error: 'API endpoint not found' });
     res.sendFile(path.join(FRONTEND_PATH, 'index.html'));
 });
-
-process.on('SIGINT', () => { db.close(); process.exit(0); });
