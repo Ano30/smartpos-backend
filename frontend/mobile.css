@@ -1,0 +1,203 @@
+﻿/* SmartPOS Mobile Responsive */
+
+@media (max-width: 1024px) {
+    .sidebar {
+        position: fixed !important;
+        top: 0;
+        left: -280px;
+        width: 260px;
+        height: 100vh;
+        z-index: 1000;
+        transition: left 0.3s ease;
+        box-shadow: 2px 0 15px rgba(0,0,0,0.15);
+    }
+    .sidebar.mobile-open { left: 0; }
+
+    .mobile-sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease;
+    }
+    .mobile-sidebar-overlay.active { opacity: 1; visibility: visible; }
+
+    .mobile-top-bar {
+        display: flex !important;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        background: #2c3e50;
+        color: #fff;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .mobile-hamburger {
+        background: none;
+        border: none;
+        color: #fff;
+        font-size: 22px;
+        padding: 6px 10px;
+        cursor: pointer;
+        border-radius: 6px;
+    }
+    .mobile-hamburger:active { background: rgba(255,255,255,0.15); }
+    .mobile-top-bar .mobile-title { flex: 1; font-size: 15px; font-weight: 700; }
+    .mobile-top-bar .mobile-user { font-size: 12px; opacity: 0.85; }
+
+    .container { display: block !important; padding: 0 !important; }
+    .main-content { width: 100% !important; margin: 0 !important; padding: 0 !important; }
+    .page { padding: 12px !important; }
+
+    .header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+        padding: 12px 0 !important;
+    }
+    .header h1 { font-size: 20px !important; }
+    .header-right { width: 100%; display: flex; gap: 8px; flex-wrap: wrap; }
+    .header-right .btn-header,
+    .header-right .btn-primary {
+        flex: 1;
+        min-width: 120px;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+
+    .pos-content { display: block !important; }
+    .product-section { width: 100% !important; padding: 0 !important; }
+
+    .cart-section {
+        position: fixed !important;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100% !important;
+        max-height: 70vh;
+        background: #fff;
+        border-radius: 20px 20px 0 0;
+        box-shadow: 0 -8px 30px rgba(0,0,0,0.15);
+        z-index: 200;
+        transform: translateY(calc(100% - 70px));
+        transition: transform 0.3s ease;
+        display: flex;
+        flex-direction: column;
+    }
+    .cart-section.mobile-expanded { transform: translateY(0); }
+    .cart-header {
+        padding: 14px 16px !important;
+        border-bottom: 1px solid #e1e8ed;
+        cursor: pointer;
+        position: relative;
+    }
+    .cart-header::before {
+        content: '';
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 4px;
+        background: #cbd5e1;
+        border-radius: 2px;
+    }
+    .cart-items { max-height: 40vh !important; overflow-y: auto; padding: 12px 16px !important; }
+    .cart-summary { padding: 14px 16px !important; overflow-y: auto; max-height: 40vh; }
+
+    .product-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+        padding: 8px 0 !important;
+    }
+    .product-card { padding: 12px 8px !important; min-height: 100px; }
+    .product-name { font-size: 12px !important; }
+    .product-price { font-size: 13px !important; }
+
+    .scanner-bar, .search-bar { width: 100% !important; }
+    .scanner-bar input, .search-bar input { font-size: 14px !important; padding: 12px 14px !important; }
+
+    .inventory-table-container,
+    .backup-table-wrapper,
+    .report-items-table,
+    .employee-table-card {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    .inventory-table, .backup-table { min-width: 800px; font-size: 12px; }
+
+    .inventory-stats,
+    .employee-stats-grid,
+    .backup-stats-grid,
+    .kpi-grid,
+    .report-summary,
+    .payment-breakdown {
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+    }
+
+    .add-item-container,
+    .settings-container,
+    .labels-container { display: block !important; padding: 8px !important; }
+
+    .form-row { flex-direction: column !important; gap: 12px !important; }
+    .form-group input,
+    .form-group select,
+    .form-group textarea { font-size: 16px !important; padding: 12px !important; }
+
+    .form-actions { flex-direction: column !important; gap: 8px; }
+    .form-actions button { width: 100% !important; padding: 14px !important; font-size: 14px !important; }
+
+    .modal-content {
+        width: 95% !important;
+        max-width: none !important;
+        max-height: 90vh !important;
+        margin: 5vh auto !important;
+        border-radius: 16px !important;
+    }
+    .modal-body { max-height: 70vh !important; overflow-y: auto; padding: 16px !important; }
+
+    .btn-primary, .btn-secondary, .btn-checkout, .btn-clear { min-height: 44px; font-size: 14px !important; }
+
+    .quick-payment { grid-template-columns: repeat(4, 1fr) !important; gap: 6px !important; }
+    .quick-payment button { padding: 10px 4px !important; font-size: 12px !important; }
+
+    .settings-card-header { padding: 14px 16px !important; }
+    .settings-card-header h3 { font-size: 14px; }
+    .settings-card-header p { font-size: 11px; }
+    .settings-card-icon { width: 38px; height: 38px; font-size: 16px; }
+
+    .charts-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+    .chart-card.wide { grid-column: span 1 !important; }
+
+    .auth-container { flex-direction: column !important; padding: 0 !important; }
+    .auth-left { display: none !important; }
+    .auth-right {
+        width: 100% !important;
+        padding: 20px !important;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .auth-form { max-width: 400px; width: 100%; }
+    .role-card { padding: 18px 16px !important; }
+    .role-card h3 { font-size: 16px !important; }
+}
+
+@media (max-width: 1024px) {
+    .mobile-top-bar { display: flex !important; }
+}
+
+@media (display-mode: standalone) {
+    .mobile-top-bar { padding-top: env(safe-area-inset-top, 10px); }
+}
+
+.pwa-standalone body {
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
