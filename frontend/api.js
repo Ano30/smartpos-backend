@@ -5,38 +5,15 @@
 const CLOUD_URL = 'https://smartpos-backend-gtwl.onrender.com';
 
 function detectAPIBase() {
-    // 1. Electron PC App (Loading from local file://)
-    // This must be first so it catches the local file protocol
-    if (window.location.protocol === 'file:') {
-        console.log('[API] Environment: Electron PC App (Using Cloud)');
-        return CLOUD_URL + '/api';
-    }
-
-    // 2. Capacitor Mobile App (Android)
-    if (typeof window.Capacitor !== 'undefined') {
-        console.log('[API] Environment: Capacitor Mobile (Using Cloud)');
-        return CLOUD_URL + '/api';
-    }
-    
-    // 3. Web Browser hosted on Render
-    if (window.location.hostname.includes('onrender.com')) {
-        console.log('[API] Environment: Web Browser on Render');
-        return window.location.origin + '/api';
-    }
-
-    // 4. Local PC Development (localhost)
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('[API] Environment: PC (localhost) -> Forcing Cloud');
-        return CLOUD_URL + '/api';
-    }
-    
-    // 5. Fallback
-    console.log('[API] Environment: Browser / PWA');
+    if (window.location.protocol === 'file:') return CLOUD_URL + '/api';
+    if (typeof window.Capacitor !== 'undefined') return CLOUD_URL + '/api';
+    if (window.location.hostname.includes('onrender.com')) return window.location.origin + '/api';
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return window.location.origin + '/api';
     return CLOUD_URL + '/api';
 }
 
 const API_BASE = detectAPIBase();
-console.log('[SmartPOS] api.js v4 loaded — API Base:', API_BASE);
+console.log('[SmartPOS] api.js loaded — API Base:', API_BASE);
 
 let authToken = localStorage.getItem('pos_token') || null;
 window.getAuthToken = () => authToken;
@@ -46,11 +23,14 @@ async function apiCall(endpoint, options = {}, retries = 2) {
         'Content-Type': 'application/json',
         ...options.headers
     };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    // Always get the freshest token from storage
+    const freshToken = localStorage.getItem('pos_token');
+    if (freshToken) headers['Authorization'] = `Bearer ${freshToken}`;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        // Increase timeout to 90 seconds so Render has time to wake up
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
 
         try {
             const response = await fetch(API_BASE + endpoint, {
@@ -64,16 +44,10 @@ async function apiCall(endpoint, options = {}, retries = 2) {
                              || endpoint.includes('/auth/register')
                              || endpoint.includes('/companies');
 
+            // 🎯 FIX: DO NOT LOG OUT. Just throw an error so the page can handle it.
             if (response.status === 401 && !isAuthRoute) {
-                localStorage.removeItem('pos_token');
-                localStorage.removeItem('pos_user');
-                localStorage.removeItem('pos_company');
-                authToken = null;
-                if (!document.getElementById('authScreen') ||
-                    document.getElementById('authScreen').style.display === 'none') {
-                    window.location.reload();
-                }
-                throw new Error('Session expired. Please login again.');
+                console.warn(`[API] 401 Unauthorized on ${endpoint}. (Not logging out)`);
+                throw new Error('Server is waking up or session is temporarily unavailable.');
             }
 
             let data;
@@ -91,7 +65,7 @@ async function apiCall(endpoint, options = {}, retries = 2) {
         } catch (err) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError' && attempt < retries) {
-                console.log(`[API] Timeout on ${endpoint}, retrying (${attempt + 1}/${retries})...`);
+                console.log(`[API] Timeout on ${endpoint}, retrying...`);
                 continue;
             }
             if (err.name === 'AbortError') {
