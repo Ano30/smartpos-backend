@@ -2,9 +2,6 @@
    SMARTPOS - Main Application Logic (script.js)
    ============================================================ */
 
-// ============================================================
-// GLOBAL STATE
-// ============================================================
 let currentUser = null;
 let currentCompany = null;
 let products = [];
@@ -12,7 +9,6 @@ let cart = [];
 let discountAmount = 0;
 let currentPaymentMethod = 'cash';
 
-// Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
 });
@@ -26,8 +22,6 @@ async function initApp() {
         try {
             currentUser = JSON.parse(userJson);
             currentCompany = JSON.parse(companyJson);
-            
-            // If we have the data, show the app immediately
             showMainApp();
         } catch (err) {
             console.error('[App] Session parse error:', err);
@@ -39,7 +33,7 @@ async function initApp() {
 }
 
 // ============================================================
-// AUTHENTICATION & ROLE SELECTION
+// AUTHENTICATION
 // ============================================================
 function showAuthScreen() {
     document.getElementById('authScreen').style.display = 'flex';
@@ -152,7 +146,6 @@ function handleLogout() {
     localStorage.removeItem('pos_company');
     currentUser = null;
     currentCompany = null;
-    // 🎯 FIX: Do NOT reload the page. Just show the login screen.
     showAuthScreen();
 }
 
@@ -188,7 +181,7 @@ function switchPage(pageId) {
 }
 
 // ============================================================
-// PRODUCTS & INVENTORY
+// PRODUCTS
 // ============================================================
 async function loadProducts() {
     try {
@@ -214,7 +207,7 @@ function renderProductGrid() {
 }
 
 // ============================================================
-// CART & CHECKOUT
+// CART
 // ============================================================
 function addToCart(productId) {
     const product = products.find(p => p.id === productId);
@@ -244,6 +237,7 @@ function renderCart() {
         if(itemCount) itemCount.textContent = '0 items';
         if(subtotalEl) subtotalEl.textContent = 'KES 0.00';
         if(totalEl) totalEl.textContent = 'KES 0.00';
+        calculateChange(); // Update change display
         return;
     }
 
@@ -268,6 +262,8 @@ function renderCart() {
     if(itemCount) itemCount.textContent = `${totalItems} items`;
     if(subtotalEl) subtotalEl.textContent = `KES ${subtotal.toFixed(2)}`;
     if(totalEl) totalEl.textContent = `KES ${finalTotal.toFixed(2)}`;
+    
+    calculateChange(); // Update change display
 }
 
 function updateCartQty(productId, change) {
@@ -288,58 +284,18 @@ function clearCart() {
     showToast('Cart cleared', 'info');
 }
 
-async function checkout() {
-    if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
-
-    const token = localStorage.getItem('pos_token');
-    const subtotal = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
-    const total = Math.max(0, subtotal - discountAmount);
-    
-    const salePayload = {
-        items: cart,
-        subtotal: subtotal,
-        discountAmount: discountAmount,
-        total: total,
-        paymentMethod: currentPaymentMethod,
-        paymentCash: currentPaymentMethod === 'cash' ? total : 0,
-        paymentMpesa: currentPaymentMethod === 'mpesa' ? total : 0
-    };
-
-    if (window.require && window.require('electron')) {
-        const { ipcRenderer } = window.require('electron');
-        if (!navigator.onLine) {
-            try {
-                await ipcRenderer.invoke('save-offline-sale', { saleData: salePayload, token: token });
-                showToast("Offline Mode: Sale saved locally.", "warning");
-                clearCart();
-                loadProducts(); 
-            } catch (err) {
-                showToast("Failed to save offline: " + err.message, "error");
-            }
-            return;
-        }
-    }
-
-    try {
-        const response = await API.createSale(salePayload);
-        showToast('Sale completed!', 'success');
-        clearCart();
-        loadProducts();
-    } catch (err) {
-        showToast("Sale failed: " + err.message, "error");
-    }
-}
-
 // ============================================================
-// PAYMENT & DISCOUNT CONTROLS (Fixes the buttons!)
+// PAYMENT METHODS
 // ============================================================
 function selectPaymentMethod(method) {
     currentPaymentMethod = method;
     
+    // Update active tab button
     document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
     const btn = document.querySelector(`.pay-method-btn[data-method="${method}"]`);
     if (btn) btn.classList.add('active');
     
+    // Show correct payment view
     document.querySelectorAll('.payment-view').forEach(view => view.classList.remove('active'));
     const view = document.getElementById(`payment${method.charAt(0).toUpperCase() + method.slice(1)}View`);
     if (view) view.classList.add('active');
@@ -349,10 +305,73 @@ function quickPayment(amount) {
     const input = document.getElementById('paymentInput');
     if (input) {
         input.value = amount;
-        if (typeof calculateChange === 'function') calculateChange();
+        calculateChange();
     }
 }
 
+function calculateChange() {
+    const paymentInput = document.getElementById('paymentInput');
+    const changeDisplay = document.getElementById('changeDisplay');
+    if (!paymentInput || !changeDisplay) return;
+
+    const total = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0) - discountAmount;
+    const tendered = parseFloat(paymentInput.value) || 0;
+    
+    if (tendered > 0) {
+        const change = tendered - total;
+        if (change >= 0) {
+            changeDisplay.innerHTML = `<div class="change-due">Change: <strong>KES ${change.toFixed(2)}</strong></div>`;
+        } else {
+            changeDisplay.innerHTML = `<div class="change-insufficient">Need: KES ${Math.abs(change).toFixed(2)} more</div>`;
+        }
+    } else {
+        changeDisplay.innerHTML = '';
+    }
+}
+
+// ============================================================
+// SPLIT PAYMENT LOGIC
+// ============================================================
+function calculateSplit() {
+    const cashInput = document.getElementById('splitCashInput');
+    const mpesaInput = document.getElementById('splitMpesaInput');
+    const display = document.getElementById('splitDisplay');
+    
+    if (!cashInput || !mpesaInput || !display) return;
+    
+    const total = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0) - discountAmount;
+    const cash = parseFloat(cashInput.value) || 0;
+    const mpesa = parseFloat(mpesaInput.value) || 0;
+    const sum = cash + mpesa;
+    
+    if (sum >= total) {
+        const change = sum - total;
+        display.innerHTML = `<div class="split-ok">✅ Total covered. Change: KES ${change.toFixed(2)}</div>`;
+    } else {
+        display.innerHTML = `<div class="split-warning">⚠️ Remaining: KES ${(total - sum).toFixed(2)}</div>`;
+    }
+}
+
+function autoFillSplit() {
+    const cashInput = document.getElementById('splitCashInput');
+    const mpesaInput = document.getElementById('splitMpesaInput');
+    if (!cashInput || !mpesaInput) return;
+    
+    const total = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0) - discountAmount;
+    const cash = parseFloat(cashInput.value) || 0;
+    
+    if (cash >= total) {
+        cashInput.value = total.toFixed(2);
+        mpesaInput.value = '0.00';
+    } else {
+        mpesaInput.value = (total - cash).toFixed(2);
+    }
+    calculateSplit();
+}
+
+// ============================================================
+// DISCOUNT LOGIC
+// ============================================================
 function toggleDiscountInput() {
     const group = document.getElementById('discountInputGroup');
     if (group) {
@@ -390,6 +409,63 @@ function clearDiscount() {
 }
 
 // ============================================================
+// CHECKOUT
+// ============================================================
+async function checkout() {
+    if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
+
+    const token = localStorage.getItem('pos_token');
+    const subtotal = cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+    const total = Math.max(0, subtotal - discountAmount);
+    
+    let paymentCash = 0;
+    let paymentMpesa = 0;
+    
+    if (currentPaymentMethod === 'cash') {
+        paymentCash = parseFloat(document.getElementById('paymentInput').value) || total;
+    } else if (currentPaymentMethod === 'mpesa') {
+        paymentMpesa = total;
+    } else if (currentPaymentMethod === 'split') {
+        paymentCash = parseFloat(document.getElementById('splitCashInput').value) || 0;
+        paymentMpesa = parseFloat(document.getElementById('splitMpesaInput').value) || 0;
+    }
+    
+    const salePayload = {
+        items: cart,
+        subtotal: subtotal,
+        discountAmount: discountAmount,
+        total: total,
+        paymentMethod: currentPaymentMethod,
+        paymentCash: paymentCash,
+        paymentMpesa: paymentMpesa
+    };
+
+    if (window.require && window.require('electron')) {
+        const { ipcRenderer } = window.require('electron');
+        if (!navigator.onLine) {
+            try {
+                await ipcRenderer.invoke('save-offline-sale', { saleData: salePayload, token: token });
+                showToast("Offline Mode: Sale saved locally.", "warning");
+                clearCart();
+                loadProducts(); 
+            } catch (err) {
+                showToast("Failed to save offline: " + err.message, "error");
+            }
+            return;
+        }
+    }
+
+    try {
+        const response = await API.createSale(salePayload);
+        showToast('Sale completed!', 'success');
+        clearCart();
+        loadProducts();
+    } catch (err) {
+        showToast("Sale failed: " + err.message, "error");
+    }
+}
+
+// ============================================================
 // UI HELPERS
 // ============================================================
 function showToast(message, type = 'info') {
@@ -400,7 +476,7 @@ function showToast(message, type = 'info') {
     setTimeout(() => { toast.className = 'toast'; }, 3000);
 }
 
-// Expose functions to window for HTML onclick handlers
+// Expose ALL functions to window
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
@@ -414,6 +490,9 @@ window.updateCartQty = updateCartQty;
 window.switchPage = switchPage;
 window.selectPaymentMethod = selectPaymentMethod;
 window.quickPayment = quickPayment;
+window.calculateChange = calculateChange;
 window.toggleDiscountInput = toggleDiscountInput;
 window.applyDiscount = applyDiscount;
 window.clearDiscount = clearDiscount;
+window.calculateSplit = calculateSplit;
+window.autoFillSplit = autoFillSplit;
