@@ -15,21 +15,41 @@ app.use(express.urlencoded({ extended: true }));
 // ============================================================
 // API ROUTES
 // ============================================================
-// (Your existing API routes stay here — /api/...)
-// Example:
-// app.use('/api/products', require('./routes/products'));
-// app.use('/api/sales', require('./routes/sales'));
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 👇 ADD THIS: Fetch Companies for the dropdown
+app.get('/api/companies', (req, res) => {
+  // Returning a dummy company so your frontend dropdown loads
+  res.json([
+    { id: 1, name: "My Test Company" }
+  ]);
+});
+
+// 👇 ADD THIS: Mock Login Route (so you can get past the login screen)
+app.post('/api/auth/login', (req, res) => {
+  const { username, password, role } = req.body;
+  
+  // Accept ANY username/password for now so you can test the app
+  res.json({
+    success: true,
+    token: "fake-jwt-token-12345",
+    user: {
+      id: 1,
+      username: username || "owner",
+      role: role || "owner",
+      companyId: 1,
+      companyName: "My Test Company"
+    }
+  });
+});
+
 // ============================================================
 // SERVE FRONTEND (FIXED PATH)
 // ============================================================
-// 🔧 CHANGE THIS to match your actual frontend folder name.
-// Common options: 'frontend', 'public', 'www', 'dist', 'build'
 const FRONTEND_PATH = path.join(__dirname, 'frontend');
 
 app.use(express.static(FRONTEND_PATH));
@@ -38,11 +58,9 @@ app.use(express.static(FRONTEND_PATH));
 // CATCH-ALL ROUTE (MUST come after all API routes)
 // ============================================================
 app.get('*', (req, res) => {
-  // If the request is for an API route that doesn't exist, return JSON 404
   if (req.url.startsWith('/api')) {
     return res.status(404).json({ error: 'API route not found' });
   }
-  // Otherwise, send index.html (Single Page App fallback)
   res.sendFile(path.join(FRONTEND_PATH, 'index.html'));
 });
 
