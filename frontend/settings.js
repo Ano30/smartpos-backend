@@ -1,199 +1,500 @@
 /* ============================================================
-   SMARTPOS - Settings & Help (Cloud/PC Optimized)
+   SMARTPOS - Settings & Help (Accordion Style)
+   Contact, Sound, Shortcuts, Terms, Mobile Access
    ============================================================ */
 
-// Global variables for settings
-let soundEnabled = true;
-let soundVolume = 70;
+(function() {
+    'use strict';
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Load initial settings data
-    loadSettings();
-    loadMobileUrl();
-});
+    // ============================================================
+    // ⭐⭐ DEVELOPER INFO ⭐⭐
+    // ============================================================
+    const DEV_INFO = {
+        name: 'Arnold Mbanda',
+        role: 'Lead Developer — SmartPOS',
+        email: 'mbandaarnold23@gmail.com',
+        phone: '+254 725 348 277',
+        whatsapp: '254751619128',
+        whatsappDisplay: '+254 751 619 128',
+        website: 'https://smartpos.co.ke',
+        github: 'https://github.com/your-username/smartpos',
+        company: 'SmartPOS Solutions',
+        version: '1.0.0',
+        copyright: '© 2026 SmartPOS Solutions. All rights reserved.'
+    };
 
-function loadSettings() {
-    // --- Load Contact Info ---
-    const contactBody = document.getElementById('contactInfoBody');
-    if (contactBody) {
-        contactBody.innerHTML = `
-            <div style="font-size: 14px; line-height: 1.8;">
-                <div><i class="fas fa-user"></i> <strong>Developer:</strong> Ano30</div>
-                <div><i class="fas fa-envelope"></i> <strong>Email:</strong> support@smartpos.com</div>
-                <div><i class="fas fa-phone"></i> <strong>Phone:</strong> +254 700 000 000</div>
-            </div>
-        `;
+    // ============================================================
+    // SOUND SETTINGS
+    // ============================================================
+    const soundSettings = {
+        enabled: localStorage.getItem('pos_sound_enabled') !== 'false',
+        volume: parseFloat(localStorage.getItem('pos_sound_volume') || '0.7')
+    };
+
+    // ============================================================
+    // KEYBOARD SHORTCUTS
+    // ============================================================
+    const SHORTCUTS = [
+        { group: 'Navigation', items: [
+            { keys: ['Alt', '1'], label: 'Go to Make Sale' },
+            { keys: ['Alt', '2'], label: 'Go to Inventory' },
+            { keys: ['Alt', '3'], label: 'Go to Reports' },
+            { keys: ['Alt', '4'], label: 'Go to Analytics' },
+            { keys: ['Alt', '5'], label: 'Go to Employees' },
+            { keys: ['Alt', '6'], label: 'Go to Settings' }
+        ]},
+        { group: 'Quick Actions', items: [
+            { keys: ['F1'], label: 'Show shortcuts help' },
+            { keys: ['F2'], label: 'Focus product search' },
+            { keys: ['F3'], label: 'Focus barcode scanner' },
+            { keys: ['F4'], label: 'Open settings' },
+            { keys: ['F5'], label: 'Reload products' },
+            { keys: ['F9'], label: 'Complete sale / checkout' }
+        ]},
+        { group: 'Search & Input', items: [
+            { keys: ['Ctrl', 'K'], label: 'Quick search products' },
+            { keys: ['Ctrl', 'B'], label: 'Focus barcode scanner' },
+            { keys: ['↑', '↓'], label: 'Navigate search suggestions' },
+            { keys: ['Enter'], label: 'Select suggestion / submit' },
+            { keys: ['Esc'], label: 'Close modal / clear search' }
+        ]},
+        { group: 'System', items: [
+            { keys: ['Ctrl', 'H'], label: 'Open help' },
+            { keys: ['Ctrl', ','], label: 'Open settings' },
+            { keys: ['Ctrl', 'Q'], label: 'Logout' },
+            { keys: ['Ctrl', 'P'], label: 'Print current receipt' }
+        ]}
+    ];
+
+    // ============================================================
+    // TERMS & CONDITIONS
+    // ============================================================
+    const TERMS = {
+        lastUpdated: 'October 4, 2026',
+        sections: [
+            { title: '1. Software License', body: `SmartPOS ("the Software") is a Point of Sale system developed by ${DEV_INFO.company}. By installing, accessing, or using the Software, you ("the User") agree to be bound by these Terms & Conditions. If you do not agree, you must immediately stop using the Software.` },
+            { title: '2. Permitted Use', body: `The User is granted a non-exclusive, non-transferable, limited license to use the Software for legitimate business purposes. This includes:<ul><li>Recording sales and managing inventory</li><li>Managing employees and their permissions</li><li>Generating business reports and analytics</li><li>Processing M-Pesa and cash payments</li></ul>` },
+            { title: '3. User Responsibilities', body: `You agree to:<ul><li>Keep your login credentials confidential and secure</li><li>Not share your account with unauthorized persons</li><li>Regularly back up your data using the backup feature</li><li>Use the Software in compliance with all applicable laws</li><li>Report any bugs, security issues, or suspected fraud immediately</li></ul>` },
+            { title: '4. Data & Privacy', body: `All business data (products, sales, customers, employees) is stored locally on your device in a secure SQLite database. ${DEV_INFO.company} does not have access to your data unless you explicitly share it for support purposes. Backups created via the Software remain your property.` },
+            { title: '5. Payments & M-Pesa', body: `M-Pesa integration is provided as a convenience. All M-Pesa transactions are processed by Safaricom PLC and subject to their terms. ${DEV_INFO.company} is not responsible for:<ul><li>Failed or delayed M-Pesa transactions</li><li>Network outages affecting payment processing</li><li>Errors made by cashiers when entering amounts</li></ul>` },
+            { title: '6. Disclaimer of Warranty', body: `The Software is provided "AS IS" without warranty of any kind, express or implied.` },
+            { title: '7. Limitation of Liability', body: `${DEV_INFO.company} shall not be liable for any indirect, incidental, or consequential damages arising from the use of the Software. The User is responsible for maintaining regular backups.` },
+            { title: '8. Updates & Modifications', body: `We may release updates to improve functionality, fix bugs, or add features. Terms may be updated occasionally; continued use of the Software constitutes acceptance of updated terms.` },
+            { title: '9. Support', body: `Support is provided via:<ul><li>Email: <a href="mailto:${DEV_INFO.email}">${DEV_INFO.email}</a></li><li>Phone: ${DEV_INFO.phone}</li><li>WhatsApp: ${DEV_INFO.whatsappDisplay}</li></ul>` },
+            { title: '10. Termination', body: `You may stop using the Software at any time. ${DEV_INFO.company} reserves the right to suspend or terminate access for violations of these terms.` },
+            { title: '11. Governing Law', body: `These terms are governed by the laws of the Republic of Kenya.` },
+            { title: '12. Contact', body: `For questions about these terms, contact:<br><br><strong>${DEV_INFO.name}</strong><br>${DEV_INFO.role}<br>Email: <a href="mailto:${DEV_INFO.email}">${DEV_INFO.email}</a><br>Phone: ${DEV_INFO.phone}<br>WhatsApp: <a href="https://wa.me/${DEV_INFO.whatsapp}" target="_blank">${DEV_INFO.whatsappDisplay}</a>` }
+        ]
+    };
+
+    // ============================================================
+    // SOUND ENGINE PATCH
+    // ============================================================
+    function applySoundSettings() {
+        if (!window.SoundEngine) return;
+        if (!window.SoundEngine._originals) {
+            window.SoundEngine._originals = {
+                success: window.SoundEngine.success,
+                error: window.SoundEngine.error,
+                chaChing: window.SoundEngine.chaChing,
+                click: window.SoundEngine.click
+            };
+        }
+        const orig = window.SoundEngine._originals;
+        const enabled = soundSettings.enabled;
+        const volume = soundSettings.volume;
+        const wrap = (fn) => function(...args) {
+            if (!enabled) return;
+            if (typeof window.SoundEngine.setVolume === 'function') window.SoundEngine.setVolume(volume);
+            return fn.apply(this, args);
+        };
+        window.SoundEngine.success = wrap(orig.success);
+        window.SoundEngine.error = wrap(orig.error);
+        window.SoundEngine.chaChing = wrap(orig.chaChing);
+        window.SoundEngine.click = wrap(orig.click);
     }
 
-    // --- Load Terms Last Updated ---
-    const termsDate = document.getElementById('termsLastUpdated');
-    if (termsDate) {
-        termsDate.textContent = new Date().toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
+    function saveSoundSettings() {
+        localStorage.setItem('pos_sound_enabled', soundSettings.enabled ? 'true' : 'false');
+        localStorage.setItem('pos_sound_volume', soundSettings.volume.toString());
     }
 
-    // --- Load About Info ---
-    const aboutVersion = document.getElementById('aboutVersionLine');
-    const aboutBody = document.getElementById('aboutBody');
-    if (aboutVersion && aboutBody) {
-        aboutVersion.textContent = 'Version 1.0.0 (Cloud Edition)';
-        aboutBody.innerHTML = `
-            <p style="font-size: 13px; color: #7f8c8d; line-height: 1.6;">
-                SmartPOS is a complete Point of Sale solution designed for retail stores, supermarkets, and small businesses.
-                It features real-time syncing, M-Pesa integration, and advanced analytics.
-            </p>
-            <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #27ae60;">
-                <h4 style="margin: 0 0 5px 0; color: #2c3e50;">Running in Cloud Mode</h4>
-                <p style="margin: 0; font-size: 12px; color: #7f8c8d;">
-                    This application is securely connected to the Render cloud server and Turso database.
-                </p>
-            </div>
-        `;
-    }
+    // ============================================================
+    // ACCORDION BEHAVIOR
+    // ============================================================
+    function setupAccordion() {
+        const cards = document.querySelectorAll('.settings-card');
+        cards.forEach(card => {
+            const header = card.querySelector('.settings-card-header');
+            if (!header) return;
+            if (header.dataset.accordionAttached === 'true') return;
+            header.dataset.accordionAttached = 'true';
 
-    // --- Load Sound Settings ---
-    const toggle = document.getElementById('soundEnabledToggle');
-    const volume = document.getElementById('soundVolume');
-    const volumeLabel = document.getElementById('soundVolumeLabel');
+            if (!header.querySelector('.settings-chevron')) {
+                const chevron = document.createElement('i');
+                chevron.className = 'fas fa-chevron-down settings-chevron';
+                header.appendChild(chevron);
+            }
 
-    if (toggle && volume && volumeLabel) {
-        // Set defaults
-        toggle.checked = soundEnabled;
-        volume.value = soundVolume;
-        volumeLabel.textContent = `${soundVolume}%`;
-
-        // Add listeners
-        toggle.addEventListener('change', (e) => {
-            soundEnabled = e.target.checked;
-            showSettingsToast(soundEnabled ? 'Sound enabled' : 'Sound muted');
+            header.addEventListener('click', function(e) {
+                e.preventDefault();
+                const isOpen = card.classList.contains('expanded');
+                cards.forEach(c => c.classList.remove('expanded'));
+                if (!isOpen) {
+                    card.classList.add('expanded');
+                    onCardExpanded(card);
+                }
+            });
         });
-
-        volume.addEventListener('input', (e) => {
-            soundVolume = e.target.value;
-            volumeLabel.textContent = `${soundVolume}%`;
-        });
     }
-}
 
-// ============================================================
-// MOBILE ACCESS (CLOUD FIX)
-// ============================================================
-function loadMobileUrl() {
-    const urlContainer = document.getElementById('mobileServerUrl');
-    if (urlContainer) {
-        // Since we are on the cloud, just give the direct Render URL
-        urlContainer.innerHTML = `https://smartpos-backend-gtwl.onrender.com`;
+    function onCardExpanded(card) {
+        const title = card.querySelector('.settings-card-header h3');
+        if (!title) return;
+        const text = title.textContent.trim();
+
+        if (text.includes('Contact')) renderContactInfo();
+        else if (text.includes('Sound')) renderSoundSettingsUI();
+        else if (text.includes('Shortcuts')) renderInlineShortcuts();
+        else if (text.includes('Terms')) renderTermsInline();
+        else if (text.includes('Mobile')) refreshMobileUrl();
+        else if (text.includes('About')) renderAboutBody();
     }
-}
 
-function copyMobileUrl() {
-    const url = document.getElementById('mobileServerUrl').innerText;
-    navigator.clipboard.writeText(url).then(() => {
-        showSettingsToast('URL copied to clipboard!');
-    }).catch(err => {
-        showSettingsToast('Failed to copy URL', 'error');
-    });
-}
-
-function refreshMobileUrl() {
-    // No need to refresh, it's a static cloud URL
-    loadMobileUrl();
-    showSettingsToast('URL updated');
-}
-
-// ============================================================
-// UI ACTIONS (MODALS & TOAST)
-// ============================================================
-function copyContactInfo() {
-    const text = "Developer: Ano30\nEmail: support@smartpos.com\nPhone: +254 700 000 000";
-    navigator.clipboard.writeText(text).then(() => {
-        showSettingsToast('Contact info copied!');
-    });
-}
-
-function openShortcutsModal() {
-    const modal = document.getElementById('shortcutsModal');
-    if (modal) modal.style.display = 'flex';
-}
-
-function closeShortcutsModal() {
-    const modal = document.getElementById('shortcutsModal');
-    if (modal) modal.style.display = 'none';
-}
-
-function openTermsModal() {
-    const modal = document.getElementById('termsModal');
-    const body = document.getElementById('termsModalBody');
-    
-    if (modal && body) {
+    // ============================================================
+    // RENDER HELPERS
+    // ============================================================
+    function renderContactInfo() {
+        const body = document.getElementById('contactInfoBody');
+        if (!body) return;
         body.innerHTML = `
-            <h3 style="margin-top: 0;">1. Software License</h3>
-            <p>SmartPOS is licensed, not sold, to you for use only under the terms of this license. We reserve all rights not expressly granted to you.</p>
-            
-            <h3>2. Data Privacy</h3>
-            <p>Your data is securely stored in the Turso Cloud Database. We do not sell or share your sales data with third parties. You are responsible for keeping your login credentials secure.</p>
-            
-            <h3>3. Payments & Refunds</h3>
-            <p>All M-Pesa transactions shown in this app are simulated for testing and accountability purposes. SmartPOS is not liable for any financial discrepancies outside of its calculated reports.</p>
-            
-            <h3>4. Acceptable Use</h3>
-            <p>You agree not to use the software for any illegal purposes or to attempt to reverse-engineer the application.</p>
+            <div class="contact-row">
+                <div class="contact-label"><i class="fas fa-user"></i> Developer</div>
+                <div class="contact-value"><strong>${DEV_INFO.name}</strong><br><small>${DEV_INFO.role}</small></div>
+            </div>
+            <div class="contact-row">
+                <div class="contact-label"><i class="fas fa-envelope"></i> Email</div>
+                <div class="contact-value"><a href="mailto:${DEV_INFO.email}">${DEV_INFO.email}</a></div>
+            </div>
+            <div class="contact-row">
+                <div class="contact-label"><i class="fas fa-phone"></i> Phone</div>
+                <div class="contact-value"><a href="tel:${DEV_INFO.phone.replace(/\s/g, '')}">${DEV_INFO.phone}</a></div>
+            </div>
+            <div class="contact-row">
+                <div class="contact-label"><i class="fab fa-whatsapp"></i> WhatsApp</div>
+                <div class="contact-value">
+                    <a href="https://wa.me/${DEV_INFO.whatsapp}" target="_blank">
+                        <i class="fab fa-whatsapp" style="color:#25d366;"></i> ${DEV_INFO.whatsappDisplay}
+                    </a>
+                </div>
+            </div>
+            <div class="contact-row">
+                <div class="contact-label"><i class="fas fa-globe"></i> Website</div>
+                <div class="contact-value"><a href="${DEV_INFO.website}" target="_blank">${DEV_INFO.website}</a></div>
+            </div>
+            <div class="contact-row">
+                <div class="contact-label"><i class="fas fa-building"></i> Company</div>
+                <div class="contact-value">${DEV_INFO.company}</div>
+            </div>
         `;
-        modal.style.display = 'flex';
     }
-}
 
-function closeTermsModal() {
-    const modal = document.getElementById('termsModal');
-    if (modal) modal.style.display = 'none';
-}
-
-function printTerms() {
-    window.print();
-}
-
-function testSound(type) {
-    if (!soundEnabled) return;
-    
-    // A simple beep using the Web Audio API for testing
-    try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        
-        oscillator.type = 'sine';
-        oscillator.frequency.value = type === 'error' ? 300 : (type === 'success' ? 800 : 600);
-        
-        gainNode.gain.setValueAtTime(soundVolume / 100, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.5);
-    } catch (e) {
-        console.log('Audio not supported');
+    function renderAboutBody() {
+        const body = document.getElementById('aboutBody');
+        if (!body) return;
+        body.innerHTML = `
+            <div class="contact-row"><div class="contact-label">Version</div><div class="contact-value"><strong>${DEV_INFO.version}</strong></div></div>
+            <div class="contact-row"><div class="contact-label">Company</div><div class="contact-value">${DEV_INFO.company}</div></div>
+            <div class="contact-row"><div class="contact-label">Developer</div><div class="contact-value">${DEV_INFO.name}</div></div>
+            <p style="font-size:12px;color:#7f8c8d;margin-top:15px;padding-top:15px;border-top:1px solid #e1e8ed;">
+                ${DEV_INFO.copyright}
+            </p>
+        `;
+        const vline = document.getElementById('aboutVersionLine');
+        if (vline) vline.textContent = `Version ${DEV_INFO.version}`;
+        const termsDate = document.getElementById('termsLastUpdated');
+        if (termsDate) termsDate.textContent = TERMS.lastUpdated;
     }
-}
 
-function showSettingsToast(message) {
-    const toast = document.getElementById('toast');
-    if (toast) {
-        toast.textContent = message;
-        toast.className = 'toast show success';
-        setTimeout(() => { toast.className = 'toast'; }, 3000);
-    } else {
-        alert(message);
+    function renderInlineShortcuts() {
+        const el = document.getElementById('shortcutsInlineList');
+        if (!el) return;
+        const top = [
+            { keys: ['F1'], label: 'Show this help' },
+            { keys: ['F2'], label: 'Focus search' },
+            { keys: ['F3'], label: 'Focus scanner' },
+            { keys: ['Ctrl', 'K'], label: 'Quick search' },
+            { keys: ['F9'], label: 'Complete sale' },
+            { keys: ['Ctrl', 'Q'], label: 'Logout' }
+        ];
+        el.innerHTML = top.map(s => `
+            <div class="shortcut-inline-row">
+                <span class="shortcut-label">${s.label}</span>
+                <span class="shortcut-keys">${s.keys.map(k => `<kbd>${k}</kbd>`).join(' + ')}</span>
+            </div>
+        `).join('');
     }
-}
 
-// Bind functions to window so HTML onclick can find them
-window.copyMobileUrl = copyMobileUrl;
-window.refreshMobileUrl = refreshMobileUrl;
-window.copyContactInfo = copyContactInfo;
-window.openShortcutsModal = openShortcutsModal;
-window.closeShortcutsModal = closeShortcutsModal;
-window.openTermsModal = openTermsModal;
-window.closeTermsModal = closeTermsModal;
-window.printTerms = printTerms;
-window.testSound = testSound;
+    function renderSoundSettingsUI() {
+        const toggle = document.getElementById('soundEnabledToggle');
+        const volume = document.getElementById('soundVolume');
+        const volumeLabel = document.getElementById('soundVolumeLabel');
+
+        if (toggle) toggle.checked = soundSettings.enabled;
+        if (volume) volume.value = Math.round(soundSettings.volume * 100);
+        if (volumeLabel) volumeLabel.textContent = Math.round(soundSettings.volume * 100) + '%';
+
+        if (toggle && !toggle.dataset.listenerAttached) {
+            toggle.dataset.listenerAttached = 'true';
+            toggle.addEventListener('change', function() {
+                soundSettings.enabled = this.checked;
+                saveSoundSettings();
+                applySoundSettings();
+                if (soundSettings.enabled && window.SoundEngine) window.SoundEngine.success();
+                showToastLocal(soundSettings.enabled ? 'Sound enabled' : 'Sound disabled');
+            });
+        }
+        if (volume && !volume.dataset.listenerAttached) {
+            volume.dataset.listenerAttached = 'true';
+            volume.addEventListener('input', function() {
+                soundSettings.volume = parseInt(this.value) / 100;
+                if (volumeLabel) volumeLabel.textContent = this.value + '%';
+                saveSoundSettings();
+                applySoundSettings();
+            });
+            volume.addEventListener('change', function() {
+                if (soundSettings.enabled && window.SoundEngine) window.SoundEngine.click();
+            });
+        }
+    }
+
+    function renderTermsInline() {
+        const el = document.getElementById('termsInlinePreview');
+        if (!el) return;
+        const firstThree = TERMS.sections.slice(0, 3);
+        el.innerHTML = firstThree.map(s => `
+            <div class="terms-inline-section">
+                <strong>${s.title}</strong>
+                <p style="font-size:12px;color:#7f8c8d;margin:4px 0 0 0;">${s.body.substring(0, 100)}...</p>
+            </div>
+        `).join('');
+    }
+
+    // ============================================================
+    // PUBLIC ACTIONS
+    // ============================================================
+    function testSound(type) {
+        if (!window.SoundEngine) { alert('Sound engine not loaded'); return; }
+        if (!soundSettings.enabled) {
+            if (window.SoundEngine._originals && window.SoundEngine._originals[type]) {
+                window.SoundEngine._originals[type]();
+            }
+            return;
+        }
+        switch (type) {
+            case 'success': window.SoundEngine.success(); break;
+            case 'error': window.SoundEngine.error(); break;
+            case 'chaChing': window.SoundEngine.chaChing(); break;
+            case 'click': window.SoundEngine.click(); break;
+        }
+    }
+
+    async function copyContactInfo() {
+        const text = `SmartPOS Developer Contact\n\nDeveloper: ${DEV_INFO.name}\nRole: ${DEV_INFO.role}\nEmail: ${DEV_INFO.email}\nPhone: ${DEV_INFO.phone}\nWhatsApp: ${DEV_INFO.whatsappDisplay}\nWhatsApp Link: https://wa.me/${DEV_INFO.whatsapp}\nWebsite: ${DEV_INFO.website}\nCompany: ${DEV_INFO.company}\nVersion: ${DEV_INFO.version}`;
+        try {
+            await navigator.clipboard.writeText(text);
+            showToastLocal('Contact info copied to clipboard');
+        } catch (e) { alert(text); }
+    }
+
+    function openShortcutsModal() {
+        const body = document.getElementById('shortcutsModalBody');
+        if (!body) return;
+        body.innerHTML = SHORTCUTS.map(group => `
+            <div class="shortcut-group">
+                <h4 class="shortcut-group-title">${group.group}</h4>
+                ${group.items.map(item => `
+                    <div class="shortcut-row">
+                        <span class="shortcut-row-label">${item.label}</span>
+                        <span class="shortcut-row-keys">${item.keys.map(k => `<kbd>${k}</kbd>`).join(' <span class="plus">+</span> ')}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `).join('');
+        document.getElementById('shortcutsModal').classList.add('active');
+    }
+
+    function closeShortcutsModal() {
+        document.getElementById('shortcutsModal').classList.remove('active');
+    }
+
+    function openTermsModal() {
+        const body = document.getElementById('termsModalBody');
+        if (!body) return;
+        body.innerHTML = `
+            <div class="terms-header">
+                <h2>SmartPOS Terms & Conditions</h2>
+                <p><strong>Last updated:</strong> ${TERMS.lastUpdated}</p>
+                <p><strong>Company:</strong> ${DEV_INFO.company}</p>
+            </div>
+            ${TERMS.sections.map(s => `<div class="terms-section"><h3>${s.title}</h3><div>${s.body}</div></div>`).join('')}
+            <div class="terms-footer"><p><em>By using SmartPOS, you acknowledge that you have read, understood, and agree to these Terms & Conditions.</em></p></div>
+        `;
+        document.getElementById('termsModal').classList.add('active');
+    }
+
+    function closeTermsModal() {
+        document.getElementById('termsModal').classList.remove('active');
+    }
+
+    function printTerms() {
+        const content = document.getElementById('termsModalBody').innerHTML;
+        const win = window.open('', '', 'width=800,height=600');
+        win.document.write(`<html><head><title>SmartPOS Terms & Conditions</title><style>body{font-family:Arial,sans-serif;padding:30px;line-height:1.6;color:#2c3e50;}h2{color:#2980b9;border-bottom:2px solid #2980b9;padding-bottom:10px;}h3{color:#34495e;margin-top:25px;}ul{padding-left:25px;}.terms-footer{margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-style:italic;color:#7f8c8d;}</style></head><body>${content}</body></html>`);
+        win.document.close();
+        setTimeout(() => win.print(), 300);
+    }
+
+    // ============================================================
+    // MOBILE ACCESS
+    // ============================================================
+    async function refreshMobileUrl() {
+        const el = document.getElementById('mobileServerUrl');
+        if (!el) return;
+        el.textContent = 'Loading...';
+
+        try {
+            const res = await fetch('https://smartpos-backend-gtwl.onrender.com/api/server-info');
+            const data = await res.json();
+            const url = `http://${data.localIP}:${data.port}`;
+            el.textContent = url;
+            el.dataset.url = url;
+
+            const qr = document.getElementById('mobileQrCode');
+            const qrImg = document.getElementById('qrCodeImg');
+            if (qr && qrImg) {
+                qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+                qr.style.display = 'block';
+            }
+        } catch (err) {
+            el.textContent = 'Cannot detect IP. Make sure PC is on WiFi.';
+        }
+    }
+
+    async function copyMobileUrl() {
+        const el = document.getElementById('mobileServerUrl');
+        const url = el?.dataset?.url || el?.textContent;
+        if (!url || url === 'Loading...') return;
+        try {
+            await navigator.clipboard.writeText(url);
+            showToastLocal('✓ URL copied! Send to phones.');
+        } catch (e) {
+            alert(url);
+        }
+    }
+
+    // ============================================================
+    // KEYBOARD SHORTCUTS HANDLER
+    // ============================================================
+    function setupKeyboardShortcuts() {
+        if (window._shortcutsAttached) return;
+        window._shortcutsAttached = true;
+        document.addEventListener('keydown', function(e) {
+            const tag = (e.target.tagName || '').toLowerCase();
+            const inInput = ['input', 'textarea', 'select'].includes(tag);
+            const isModalOpen = !!document.querySelector('.modal.active');
+
+            if (e.key === 'F1') { e.preventDefault(); openShortcutsModal(); return; }
+            if (e.key === 'F2') { e.preventDefault(); document.getElementById('searchInput')?.focus(); return; }
+            if (e.key === 'F3') { e.preventDefault(); document.getElementById('barcodeScannerInput')?.focus(); return; }
+            if (e.key === 'F4') { e.preventDefault(); if (typeof window.switchPage === 'function') window.switchPage('settings'); return; }
+            if (e.key === 'F5') { e.preventDefault(); if (typeof window.loadProducts === 'function') { window.loadProducts().then(() => { if (typeof window.renderProducts === 'function') window.renderProducts(); if (typeof window.renderCategoryFilter === 'function') window.renderCategoryFilter(); }); showToastLocal('Products refreshed'); } return; }
+            if (e.key === 'F9') { e.preventDefault(); if (typeof window.checkout === 'function') window.checkout(); return; }
+
+            if (e.key === 'Escape') {
+                if (isModalOpen) { document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active')); return; }
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput && searchInput.value) { searchInput.value = ''; if (typeof window.renderProducts === 'function') window.renderProducts(); }
+                return;
+            }
+
+            if (e.ctrlKey || e.metaKey) {
+                const key = e.key.toLowerCase();
+                if (key === 'k') { e.preventDefault(); const el = document.getElementById('searchInput'); if (el) { el.focus(); el.select(); } return; }
+                if (key === 'b') { e.preventDefault(); const el = document.getElementById('barcodeScannerInput'); if (el) { el.focus(); el.select(); } return; }
+                if (key === 'h') { e.preventDefault(); openShortcutsModal(); return; }
+                if (e.key === ',') { e.preventDefault(); if (typeof window.switchPage === 'function') window.switchPage('settings'); return; }
+                if (key === 'q') { e.preventDefault(); if (typeof window.handleLogout === 'function') window.handleLogout(); return; }
+                if (key === 'p') { const rm = document.getElementById('receiptModal'); if (rm && rm.classList.contains('active')) { e.preventDefault(); if (typeof window.printReceipt === 'function') window.printReceipt(); } return; }
+                return;
+            }
+
+            if (e.altKey && !inInput) {
+                const pages = ['sales', 'inventory', 'reports', 'analytics', 'employees', 'settings'];
+                const num = parseInt(e.key);
+                if (num >= 1 && num <= pages.length) { e.preventDefault(); if (typeof window.switchPage === 'function') window.switchPage(pages[num - 1]); }
+            }
+        });
+    }
+
+    // ============================================================
+    // HOOK INTO switchPage
+    // ============================================================
+    function hookSwitchPage() {
+        const observer = new MutationObserver(() => {
+            const settingsPage = document.getElementById('page-settings');
+            if (settingsPage && settingsPage.classList.contains('active')) {
+                setupAccordion();
+                renderContactInfo();
+                renderAboutBody();
+                renderInlineShortcuts();
+                renderSoundSettingsUI();
+                refreshMobileUrl();
+            }
+        });
+        const settingsPage = document.getElementById('page-settings');
+        if (settingsPage) observer.observe(settingsPage, { attributes: true, attributeFilter: ['class'] });
+    }
+
+    // ============================================================
+    // LOCAL TOAST
+    // ============================================================
+    function showToastLocal(msg) {
+        if (typeof window.showToast === 'function') { window.showToast(msg, 'success'); return; }
+        const toast = document.getElementById('toast');
+        if (toast) { toast.textContent = msg; toast.className = 'toast success show'; setTimeout(() => toast.classList.remove('show'), 2500); }
+    }
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        applySoundSettings();
+        setupKeyboardShortcuts();
+        setupAccordion();
+        hookSwitchPage();
+        setTimeout(() => {
+            renderContactInfo();
+            renderAboutBody();
+            renderInlineShortcuts();
+            renderSoundSettingsUI();
+            refreshMobileUrl();
+        }, 500);
+        console.log('[SmartPOS] settings.js loaded (with Mobile Access)');
+    });
+
+    // ============================================================
+    // EXPOSE GLOBALLY
+    // ============================================================
+    window.openShortcutsModal = openShortcutsModal;
+    window.closeShortcutsModal = closeShortcutsModal;
+    window.openTermsModal = openTermsModal;
+    window.closeTermsModal = closeTermsModal;
+    window.printTerms = printTerms;
+    window.copyContactInfo = copyContactInfo;
+    window.testSound = testSound;
+    window.DEV_INFO = DEV_INFO;
+    window.refreshMobileUrl = refreshMobileUrl;
+    window.copyMobileUrl = copyMobileUrl;
+
+})();

@@ -1,51 +1,104 @@
 /* ============================================
-   SMARTPOS - API Client (Bulletproof Login Fix)
+   SMARTPOS - API Client (Electron PC + Mobile + Web)
    ============================================ */
 
 const CLOUD_URL = 'https://smartpos-backend-gtwl.onrender.com';
 
 function detectAPIBase() {
-    // Force it to always use the live cloud URL
+    // 1. Electron PC App (Loading from local file://)
+    // This must be first so it catches the local file protocol
+    if (window.location.protocol === 'file:') {
+        console.log('[API] Environment: Electron PC App (Using Cloud)');
+        return CLOUD_URL + '/api';
+    }
+
+    // 2. Capacitor Mobile App (Android)
+    if (typeof window.Capacitor !== 'undefined') {
+        console.log('[API] Environment: Capacitor Mobile (Using Cloud)');
+        return CLOUD_URL + '/api';
+    }
+    
+    // 3. Web Browser hosted on Render
+    if (window.location.hostname.includes('onrender.com')) {
+        console.log('[API] Environment: Web Browser on Render');
+        return window.location.origin + '/api';
+    }
+
+    // 4. Local PC Development (localhost)
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        console.log('[API] Environment: PC (localhost) -> Forcing Cloud');
+        return CLOUD_URL + '/api';
+    }
+    
+    // 5. Fallback
+    console.log('[API] Environment: Browser / PWA');
     return CLOUD_URL + '/api';
 }
 
 const API_BASE = detectAPIBase();
+console.log('[SmartPOS] api.js v4 loaded — API Base:', API_BASE);
+
 let authToken = localStorage.getItem('pos_token') || null;
 window.getAuthToken = () => authToken;
 
-async function apiCall(endpoint, options = {}) {
+async function apiCall(endpoint, options = {}, retries = 2) {
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers
     };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-    try {
-        const response = await fetch(API_BASE + endpoint, {
-            ...options,
-            headers
-        });
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-        let data;
-        const text = await response.text();
-        
         try {
-            data = JSON.parse(text);
-        } catch (e) {
-            throw new Error('Invalid response from server.');
+            const response = await fetch(API_BASE + endpoint, {
+                ...options,
+                headers,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            const isAuthRoute = endpoint.includes('/auth/login')
+                             || endpoint.includes('/auth/register')
+                             || endpoint.includes('/companies');
+
+            if (response.status === 401 && !isAuthRoute) {
+                localStorage.removeItem('pos_token');
+                localStorage.removeItem('pos_user');
+                localStorage.removeItem('pos_company');
+                authToken = null;
+                if (!document.getElementById('authScreen') ||
+                    document.getElementById('authScreen').style.display === 'none') {
+                    window.location.reload();
+                }
+                throw new Error('Session expired. Please login again.');
+            }
+
+            let data;
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                console.error('[API] Non-JSON response:', text.substring(0, 200));
+                throw new Error('Invalid response from server.');
+            }
+
+            if (!response.ok) throw new Error(data.error || 'Request failed');
+            return data;
+
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError' && attempt < retries) {
+                console.log(`[API] Timeout on ${endpoint}, retrying (${attempt + 1}/${retries})...`);
+                continue;
+            }
+            if (err.name === 'AbortError') {
+                throw new Error('Server is waking up. Please wait 30 seconds and try again.');
+            }
+            throw err;
         }
-
-        // If the server returns an error, throw it, but DO NOT wipe localStorage here.
-        // Wiping localStorage is what causes the instant logout!
-        if (!response.ok) {
-            throw new Error(data.error || 'Request failed');
-        }
-
-        return data;
-
-    } catch (err) {
-        // Just pass the error up to the caller. The UI will handle it gracefully.
-        throw err;
     }
 }
 
