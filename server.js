@@ -114,8 +114,9 @@ function runSchema() {
             seedDefaultData();
         })
         .catch(err => {
-            console.error('[Database] Schema error:', err.message);
-            process.exit(1);
+            console.error('[Database] Schema error (retrying):', err.message);
+            // 🎯 FIX: Don't crash the server. Try again in 5 seconds.
+            setTimeout(runSchema, 5000);
         });
 }
 
@@ -172,7 +173,7 @@ app.use(express.json({ limit: '10mb' }));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200, message: { error: 'Too many attempts.' } });
 
 // ============================================================
-// AUTH MIDDLEWARE (CRITICAL: MUST BE BEFORE ROUTES)
+// AUTH MIDDLEWARE
 // ============================================================
 function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -193,7 +194,7 @@ function requirePermission(permission) {
 }
 
 // ============================================================
-// SERVE FRONTEND (Must be after API routes, but before catch-all)
+// SERVE FRONTEND
 // ============================================================
 const FRONTEND_PATH = path.join(__dirname, 'frontend'); 
 app.use(express.static(FRONTEND_PATH));
@@ -475,11 +476,9 @@ app.get('/api/analytics/dashboard', authenticate, (req, res) => res.json({ messa
 // CATCH-ALL ROUTE (For Frontend SPA)
 // ============================================================
 app.get('*', (req, res) => {
-    // 1. If an API route wasn't matched above, return a JSON 404 (Don't crash the frontend)
     if (req.url.startsWith('/api')) {
         return res.status(404).json({ error: 'API endpoint not found' });
     }
-    // 2. Otherwise, send index.html
     res.sendFile(path.join(FRONTEND_PATH, 'index.html'));
 });
 
