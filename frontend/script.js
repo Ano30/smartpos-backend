@@ -192,7 +192,7 @@ function switchPage(pageId) {
 }
 
 // ============================================================
-// PRODUCTS
+// PRODUCTS & CART
 // ============================================================
 async function loadProducts() {
     try {
@@ -217,9 +217,6 @@ function renderProductGrid() {
     `).join('');
 }
 
-// ============================================================
-// CART
-// ============================================================
 function addToCart(productId) {
     const product = products.find(p => p.id === productId);
     if (!product) return;
@@ -401,7 +398,7 @@ function clearDiscount() {
 }
 
 // ============================================================
-// CHECKOUT & M-PESA (THE 3-SECOND SIMULATION)
+// CHECKOUT & M-PESA (THE FIX)
 // ============================================================
 async function checkout() {
     if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
@@ -423,8 +420,14 @@ async function checkout() {
     } else if (currentPaymentMethod === 'split') {
         paymentCash = parseFloat(document.getElementById('splitCashInput').value) || 0;
         paymentMpesa = parseFloat(document.getElementById('splitMpesaInput').value) || 0;
-        customerPhone = document.getElementById('mpesaPhoneInput').value.trim();
-        if (paymentMpesa > 0 && !customerPhone) { showToast('Please enter customer phone number', 'error'); return; }
+        
+        // 🎯 FIX: Grab the phone number from the Split view
+        customerPhone = document.getElementById('splitMpesaPhoneInput').value.trim();
+        
+        if (paymentMpesa > 0 && !customerPhone) { 
+            showToast('Please enter customer phone number for M-Pesa split', 'error'); 
+            return; 
+        }
     }
     
     const salePayload = {
@@ -438,6 +441,7 @@ async function checkout() {
         customerPhone: customerPhone
     };
 
+    // Offline handling
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
@@ -456,24 +460,25 @@ async function checkout() {
     try {
         let fakeMpesaReceipt = null;
 
-        if ((currentPaymentMethod === 'mpesa' || currentPaymentMethod === 'split') && paymentMpesa > 0) {
+        // 🎯 THE 3-SECOND MPESA SIMULATION
+        if (paymentMpesa > 0) {
             showToast(`Sending STK Push to ${customerPhone}...`, 'info');
             
-            // Initiate the fake push
+            // Send to server
             await API.initiateMpesa(customerPhone, paymentMpesa);
             
-            // 🎯 WAIT 3 SECONDS (The simulation)
+            // Wait 3 seconds
             await new Promise(r => setTimeout(r, 3000));
             
-            // Generate the fake receipt
+            // Generate receipt
             fakeMpesaReceipt = 'Q' + Math.random().toString(36).substring(2, 10).toUpperCase();
             showToast(`M-Pesa Received: ${fakeMpesaReceipt}`, 'success');
         }
 
-        // Save the sale with the phone number and fake receipt
+        // Save Sale
         const response = await API.createSale({ ...salePayload, mpesaReceipt: fakeMpesaReceipt });
         
-        // Show Receipt Modal
+        // Show Receipt
         showReceipt({
             receiptNo: response.receiptNo || 'R' + Date.now(),
             date: new Date().toISOString(),
