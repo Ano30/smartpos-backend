@@ -29,9 +29,6 @@ async function initApp() {
             
             // If we have the data, show the app immediately
             showMainApp();
-            
-            // Optionally verify in the background (uncomment if API.verify exists)
-            // API.verify().catch(() => handleLogout());
         } catch (err) {
             console.error('[App] Session parse error:', err);
             handleLogout();
@@ -155,7 +152,8 @@ function handleLogout() {
     localStorage.removeItem('pos_company');
     currentUser = null;
     currentCompany = null;
-    window.location.reload();
+    // 🎯 FIX: Do NOT reload the page. Just show the login screen.
+    showAuthScreen();
 }
 
 function showMainApp() {
@@ -197,8 +195,8 @@ async function loadProducts() {
         products = await API.getProducts();
         renderProductGrid();
     } catch (err) {
-        console.error('[App] Failed to load products:', err);
-        if (navigator.onLine) showToast('Failed to load products', 'error');
+        console.warn('[App] Failed to load products:', err.message);
+        showToast('Could not load products. Check your internet or wait for server to wake up.', 'error');
     }
 }
 
@@ -216,7 +214,7 @@ function renderProductGrid() {
 }
 
 // ============================================================
-// CART & CHECKOUT (WITH OFFLINE ELECTRON LOGIC)
+// CART & CHECKOUT
 // ============================================================
 function addToCart(productId) {
     const product = products.find(p => p.id === productId);
@@ -272,6 +270,24 @@ function renderCart() {
     if(totalEl) totalEl.textContent = `KES ${finalTotal.toFixed(2)}`;
 }
 
+function updateCartQty(productId, change) {
+    const item = cart.find(i => i.productId === productId);
+    if (!item) return;
+    if (change === -1 && item.quantity === 1) {
+        cart = cart.filter(i => i.productId !== productId);
+    } else {
+        item.quantity += change;
+    }
+    renderCart();
+}
+
+function clearCart() {
+    cart = [];
+    discountAmount = 0;
+    renderCart();
+    showToast('Cart cleared', 'info');
+}
+
 async function checkout() {
     if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
 
@@ -289,14 +305,12 @@ async function checkout() {
         paymentMpesa: currentPaymentMethod === 'mpesa' ? total : 0
     };
 
-    // OFFLINE ELECTRON LOGIC
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
-        
         if (!navigator.onLine) {
             try {
                 await ipcRenderer.invoke('save-offline-sale', { saleData: salePayload, token: token });
-                showToast("Offline Mode: Sale saved locally and will sync later.", "warning");
+                showToast("Offline Mode: Sale saved locally.", "warning");
                 clearCart();
                 loadProducts(); 
             } catch (err) {
@@ -306,7 +320,6 @@ async function checkout() {
         }
     }
 
-    // ONLINE LOGIC
     try {
         const response = await API.createSale(salePayload);
         showToast('Sale completed!', 'success');
@@ -317,21 +330,63 @@ async function checkout() {
     }
 }
 
-function clearCart() {
-    cart = [];
-    discountAmount = 0;
-    renderCart();
+// ============================================================
+// PAYMENT & DISCOUNT CONTROLS (Fixes the buttons!)
+// ============================================================
+function selectPaymentMethod(method) {
+    currentPaymentMethod = method;
+    
+    document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
+    const btn = document.querySelector(`.pay-method-btn[data-method="${method}"]`);
+    if (btn) btn.classList.add('active');
+    
+    document.querySelectorAll('.payment-view').forEach(view => view.classList.remove('active'));
+    const view = document.getElementById(`payment${method.charAt(0).toUpperCase() + method.slice(1)}View`);
+    if (view) view.classList.add('active');
 }
 
-function updateCartQty(productId, change) {
-    const item = cart.find(i => i.productId === productId);
-    if (!item) return;
-    if (change === -1 && item.quantity === 1) {
-        cart = cart.filter(i => i.productId !== productId);
-    } else {
-        item.quantity += change;
+function quickPayment(amount) {
+    const input = document.getElementById('paymentInput');
+    if (input) {
+        input.value = amount;
+        if (typeof calculateChange === 'function') calculateChange();
     }
+}
+
+function toggleDiscountInput() {
+    const group = document.getElementById('discountInputGroup');
+    if (group) {
+        group.style.display = group.style.display === 'none' ? 'flex' : 'none';
+    }
+}
+
+function applyDiscount() {
+    const input = document.getElementById('discountInput');
+    if (!input) return;
+    const val = parseFloat(input.value);
+    if (isNaN(val) || val < 0) {
+        showToast('Enter a valid discount amount', 'error');
+        return;
+    }
+    discountAmount = val;
+    const row = document.getElementById('discountRow');
+    const display = document.getElementById('discountDisplay');
+    if (row) row.style.display = 'flex';
+    if (display) display.textContent = `- KES ${val.toFixed(2)}`;
+    
     renderCart();
+    toggleDiscountInput();
+}
+
+function clearDiscount() {
+    discountAmount = 0;
+    const row = document.getElementById('discountRow');
+    if (row) row.style.display = 'none';
+    const input = document.getElementById('discountInput');
+    if (input) input.value = '';
+    
+    renderCart();
+    toggleDiscountInput();
 }
 
 // ============================================================
@@ -357,3 +412,8 @@ window.checkout = checkout;
 window.clearCart = clearCart;
 window.updateCartQty = updateCartQty;
 window.switchPage = switchPage;
+window.selectPaymentMethod = selectPaymentMethod;
+window.quickPayment = quickPayment;
+window.toggleDiscountInput = toggleDiscountInput;
+window.applyDiscount = applyDiscount;
+window.clearDiscount = clearDiscount;
