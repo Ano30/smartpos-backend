@@ -9,8 +9,21 @@ let cart = [];
 let discountAmount = 0;
 let currentPaymentMethod = 'cash';
 
+// Initialize app and attach event listeners
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
+
+    // 🎯 SIDEBAR NAVIGATION FIX
+    // This listens for clicks on the sidebar buttons and changes the page
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const pageId = item.getAttribute('data-page');
+            if (pageId) {
+                switchPage(pageId);
+            }
+        });
+    });
 });
 
 async function initApp() {
@@ -178,6 +191,11 @@ function switchPage(pageId) {
     
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
+
+    // Initialize specific pages if needed
+    if (pageId === 'returns' && typeof initReturnsPage === 'function') {
+        initReturnsPage();
+    }
 }
 
 // ============================================================
@@ -437,7 +455,6 @@ async function checkout() {
         paymentMpesa: paymentMpesa
     };
 
-    // Handle Offline Mode for Electron
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
@@ -456,16 +473,10 @@ async function checkout() {
     try {
         let fakeMpesaReceipt = null;
 
-        // 1. If M-Pesa, simulate the STK push first
         if ((currentPaymentMethod === 'mpesa' || currentPaymentMethod === 'split') && paymentMpesa > 0) {
             showToast('Sending M-Pesa STK Push...', 'info');
-            
-            // Simulate the API call to the backend (which has a 3-second timeout)
             const mpesaRes = await API.initiateMpesa('0712345678', paymentMpesa);
-            
-            // Wait for the backend to generate the fake receipt
             await new Promise(r => setTimeout(r, 3200));
-            
             const statusRes = await API.checkMpesaStatus(mpesaRes.checkoutRequestId);
             if (statusRes.status === 'success') {
                 fakeMpesaReceipt = statusRes.mpesaReceipt;
@@ -473,10 +484,8 @@ async function checkout() {
             }
         }
 
-        // 2. Save the sale to the database
         const response = await API.createSale(salePayload);
         
-        // 3. Show the receipt modal
         showReceipt({
             receiptNo: response.receiptNo || 'R' + Date.now(),
             date: new Date().toISOString(),
