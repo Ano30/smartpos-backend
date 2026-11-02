@@ -237,7 +237,6 @@ function renderCart() {
         if(itemCount) itemCount.textContent = '0 items';
         if(subtotalEl) subtotalEl.textContent = 'KES 0.00';
         if(totalEl) totalEl.textContent = 'KES 0.00';
-        calculateChange(); // Update change display
         return;
     }
 
@@ -263,7 +262,7 @@ function renderCart() {
     if(subtotalEl) subtotalEl.textContent = `KES ${subtotal.toFixed(2)}`;
     if(totalEl) totalEl.textContent = `KES ${finalTotal.toFixed(2)}`;
     
-    calculateChange(); // Update change display
+    calculateChange();
 }
 
 function updateCartQty(productId, change) {
@@ -290,12 +289,10 @@ function clearCart() {
 function selectPaymentMethod(method) {
     currentPaymentMethod = method;
     
-    // Update active tab button
     document.querySelectorAll('.pay-method-btn').forEach(btn => btn.classList.remove('active'));
     const btn = document.querySelector(`.pay-method-btn[data-method="${method}"]`);
     if (btn) btn.classList.add('active');
     
-    // Show correct payment view
     document.querySelectorAll('.payment-view').forEach(view => view.classList.remove('active'));
     const view = document.getElementById(`payment${method.charAt(0).toUpperCase() + method.slice(1)}View`);
     if (view) view.classList.add('active');
@@ -409,7 +406,7 @@ function clearDiscount() {
 }
 
 // ============================================================
-// CHECKOUT
+// CHECKOUT & M-PESA
 // ============================================================
 async function checkout() {
     if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
@@ -440,6 +437,7 @@ async function checkout() {
         paymentMpesa: paymentMpesa
     };
 
+    // Handle Offline Mode for Electron
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
@@ -456,13 +454,97 @@ async function checkout() {
     }
 
     try {
+        let fakeMpesaReceipt = null;
+
+        // 1. If M-Pesa, simulate the STK push first
+        if ((currentPaymentMethod === 'mpesa' || currentPaymentMethod === 'split') && paymentMpesa > 0) {
+            showToast('Sending M-Pesa STK Push...', 'info');
+            
+            // Simulate the API call to the backend (which has a 3-second timeout)
+            const mpesaRes = await API.initiateMpesa('0712345678', paymentMpesa);
+            
+            // Wait for the backend to generate the fake receipt
+            await new Promise(r => setTimeout(r, 3200));
+            
+            const statusRes = await API.checkMpesaStatus(mpesaRes.checkoutRequestId);
+            if (statusRes.status === 'success') {
+                fakeMpesaReceipt = statusRes.mpesaReceipt;
+                showToast(`M-Pesa Received: ${fakeMpesaReceipt}`, 'success');
+            }
+        }
+
+        // 2. Save the sale to the database
         const response = await API.createSale(salePayload);
-        showToast('Sale completed!', 'success');
+        
+        // 3. Show the receipt modal
+        showReceipt({
+            receiptNo: response.receiptNo || 'R' + Date.now(),
+            date: new Date().toISOString(),
+            cashier: currentUser.username,
+            items: cart,
+            total: total,
+            paymentCash: paymentCash,
+            paymentMpesa: paymentMpesa,
+            change: paymentCash > total ? paymentCash - total : 0,
+            mpesaReceipt: fakeMpesaReceipt
+        });
+
         clearCart();
         loadProducts();
+
     } catch (err) {
         showToast("Sale failed: " + err.message, "error");
     }
+}
+
+// ============================================================
+// RECEIPT MODAL GENERATOR
+// ============================================================
+function showReceipt(receipt) {
+    const modal = document.getElementById('receiptModal');
+    if (!modal) return;
+
+    document.getElementById('receiptCompany').textContent = currentCompany.name;
+    document.getElementById('receiptDate').textContent = new Date(receipt.date).toLocaleString();
+    document.getElementById('receiptCashier').textContent = receipt.cashier;
+
+    let itemsHtml = receipt.items.map(item => `
+        <div class="receipt-item" style="display:flex; justify-content:space-between; margin-bottom:4px;">
+            <span>${item.name} x${item.quantity}</span>
+            <span>KES ${(item.unit_price * item.quantity).toFixed(2)}</span>
+        </div>
+    `).join('');
+
+    let totalHtml = `
+        <div class="receipt-total-row" style="margin-top:10px; border-top:1px dashed #ccc; padding-top:10px; display:flex; justify-content:space-between; font-weight:bold;">
+            <span>Total:</span>
+            <span>KES ${receipt.total.toFixed(2)}</span>
+        </div>
+    `;
+
+    if (receipt.paymentCash > 0) {
+        totalHtml += `<div class="receipt-total-row" style="display:flex; justify-content:space-between;"><span>Cash:</span><span>KES ${receipt.paymentCash.toFixed(2)}</span></div>`;
+    }
+    if (receipt.paymentMpesa > 0) {
+        totalHtml += `<div class="receipt-total-row" style="display:flex; justify-content:space-between;"><span>M-Pesa:</span><span>KES ${receipt.paymentMpesa.toFixed(2)}</span></div>`;
+    }
+    if (receipt.mpesaReceipt) {
+        totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>M-Pesa Code:</span><span>${receipt.mpesaReceipt}</span></div>`;
+    }
+    if (receipt.change > 0) {
+        totalHtml += `<div class="receipt-total-row" style="font-weight:bold; color:#27ae60; display:flex; justify-content:space-between;"><span>Change:</span><span>KES ${receipt.change.toFixed(2)}</span></div>`;
+    }
+
+    document.getElementById('receiptBody').innerHTML = itemsHtml + totalHtml;
+    modal.style.display = 'flex';
+}
+
+function closeReceipt() {
+    document.getElementById('receiptModal').style.display = 'none';
+}
+
+function printReceipt() {
+    window.print();
 }
 
 // ============================================================
@@ -496,3 +578,6 @@ window.applyDiscount = applyDiscount;
 window.clearDiscount = clearDiscount;
 window.calculateSplit = calculateSplit;
 window.autoFillSplit = autoFillSplit;
+window.showReceipt = showReceipt;
+window.closeReceipt = closeReceipt;
+window.printReceipt = printReceipt;
