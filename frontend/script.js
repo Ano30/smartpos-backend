@@ -18,23 +18,22 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initApp() {
-    const token = getAuthToken();
+    const token = localStorage.getItem('pos_token');
     const userJson = localStorage.getItem('pos_user');
     const companyJson = localStorage.getItem('pos_company');
 
-    if (token && userJson && companyJson) {
+    if (token && userJson && companyJson && userJson !== 'undefined' && companyJson !== 'undefined') {
         try {
             currentUser = JSON.parse(userJson);
             currentCompany = JSON.parse(companyJson);
             
-            // Verify token is still valid
-            const verifyData = await API.verify();
-            currentUser = verifyData.user;
-            currentCompany = verifyData.company;
-            
+            // If we have the data, show the app immediately
             showMainApp();
+            
+            // Optionally verify in the background (uncomment if API.verify exists)
+            // API.verify().catch(() => handleLogout());
         } catch (err) {
-            console.log('[App] Session invalid, showing login');
+            console.error('[App] Session parse error:', err);
             handleLogout();
         }
     } else {
