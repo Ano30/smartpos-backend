@@ -172,9 +172,35 @@ app.use(express.json({ limit: '10mb' }));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200, message: { error: 'Too many attempts.' } });
 
 // ============================================================
-// API ROUTES (Must be registered BEFORE static files/catch-all)
+// AUTH MIDDLEWARE (CRITICAL: MUST BE BEFORE ROUTES)
 // ============================================================
+function authenticate(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token provided' });
+    try {
+        req.user = jwt.verify(authHeader.substring(7), JWT_SECRET);
+        next();
+    } catch (err) { return res.status(401).json({ error: 'Invalid token' }); }
+}
 
+function requirePermission(permission) {
+    return (req, res, next) => {
+        if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+        if (req.user.role === 'owner') return next();
+        if ((req.user.permissions || []).includes(permission)) return next();
+        return res.status(403).json({ error: 'Access denied' });
+    };
+}
+
+// ============================================================
+// SERVE FRONTEND (Must be after API routes, but before catch-all)
+// ============================================================
+const FRONTEND_PATH = path.join(__dirname, 'frontend'); 
+app.use(express.static(FRONTEND_PATH));
+
+// ============================================================
+// API ROUTES
+// ============================================================
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 app.get('/api/server-info', (req, res) => res.json({ localIP: 'cloud', port: PORT, hostname: 'Turso', platform: 'Cloud', isCloud: true }));
 app.get('/api/companies', (req, res) => db.all("SELECT id, name FROM companies WHERE is_active = 1 ORDER BY name ASC", [], (err, rows) => res.json(rows || [])));
@@ -446,20 +472,14 @@ app.get('/api/analytics/customer-insights', authenticate, (req, res) => db.all(`
 app.get('/api/analytics/dashboard', authenticate, (req, res) => res.json({ message: 'Use specific analytics endpoints' }));
 
 // ============================================================
-// SERVE FRONTEND & CATCH-ALL ROUTE
+// CATCH-ALL ROUTE (For Frontend SPA)
 // ============================================================
-const FRONTEND_PATH = path.join(__dirname, 'frontend'); 
-// NOTE: If your folder is named 'public' or 'www', change 'frontend' to match.
-
-app.use(express.static(FRONTEND_PATH));
-
-// Catch-all route for SPA (Single Page App)
 app.get('*', (req, res) => {
-    // 1. If it's an API route that wasn't caught above, return a JSON 404
+    // 1. If an API route wasn't matched above, return a JSON 404 (Don't crash the frontend)
     if (req.url.startsWith('/api')) {
         return res.status(404).json({ error: 'API endpoint not found' });
     }
-    // 2. Otherwise, serve index.html
+    // 2. Otherwise, send index.html
     res.sendFile(path.join(FRONTEND_PATH, 'index.html'));
 });
 
