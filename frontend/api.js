@@ -5,38 +5,23 @@
 const CLOUD_URL = 'https://smartpos-backend-gtwl.onrender.com';
 
 function detectAPIBase() {
-    // 1. Electron PC App (Loading from local file://)
-    // This must be first so it catches the local file protocol
     if (window.location.protocol === 'file:') {
-        console.log('[API] Environment: Electron PC App (Using Cloud)');
         return CLOUD_URL + '/api';
     }
-
-    // 2. Capacitor Mobile App (Android)
     if (typeof window.Capacitor !== 'undefined') {
-        console.log('[API] Environment: Capacitor Mobile (Using Cloud)');
         return CLOUD_URL + '/api';
     }
-    
-    // 3. Web Browser hosted on Render
     if (window.location.hostname.includes('onrender.com')) {
-        console.log('[API] Environment: Web Browser on Render');
         return window.location.origin + '/api';
     }
-
-    // 4. Local PC Development (localhost)
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('[API] Environment: PC (localhost) -> Forcing Cloud');
-        return CLOUD_URL + '/api';
+        return window.location.origin + '/api';
     }
-    
-    // 5. Fallback
-    console.log('[API] Environment: Browser / PWA');
     return CLOUD_URL + '/api';
 }
 
 const API_BASE = detectAPIBase();
-console.log('[SmartPOS] api.js v4 loaded — API Base:', API_BASE);
+console.log(`[SmartPOS] api.js v4 loaded — API Base: ${API_BASE}`);
 
 let authToken = localStorage.getItem('pos_token') || null;
 window.getAuthToken = () => authToken;
@@ -50,6 +35,7 @@ async function apiCall(endpoint, options = {}, retries = 2) {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
         const controller = new AbortController();
+        // Increase timeout to 60 seconds (Render free tier can be slow to wake up)
         const timeoutId = setTimeout(() => controller.abort(), 60000);
 
         try {
@@ -64,104 +50,112 @@ async function apiCall(endpoint, options = {}, retries = 2) {
                              || endpoint.includes('/auth/register')
                              || endpoint.includes('/companies');
 
+            // 🎯 THE FIX: Only log out if we get a 401 from an explicit /auth/verify endpoint,
+            // or if it's a fatal auth error. Do NOT instantly log out on background API calls.
             if (response.status === 401 && !isAuthRoute) {
-                localStorage.removeItem('pos_token');
-                localStorage.removeItem('pos_user');
-                localStorage.removeItem('pos_company');
-                authToken = null;
-                if (!document.getElementById('authScreen') ||
-                    document.getElementById('authScreen').style.display === 'none') {
-                    window.location.reload();
-                }
-                throw new Error('Session expired. Please login again.');
+                console.warn(`[API] 401 Unauthorized on ${endpoint}. Not auto-logging out.`);
+                // We throw an error so the specific page fails, but the user stays logged in.
+                throw new Error('Session expired or unauthorized. Please log in again.');
             }
 
-            let data;
-            const text = await response.text();
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                console.error('[API] Non-JSON response:', text.substring(0, 200));
-                throw new Error('Invalid response from server.');
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP ${response.status}`);
             }
 
-            if (!response.ok) throw new Error(data.error || 'Request failed');
             return data;
-
         } catch (err) {
             clearTimeout(timeoutId);
-            if (err.name === 'AbortError' && attempt < retries) {
-                console.log(`[API] Timeout on ${endpoint}, retrying (${attempt + 1}/${retries})...`);
-                continue;
-            }
             if (err.name === 'AbortError') {
-                throw new Error('Server is waking up. Please wait 30 seconds and try again.');
+                if (attempt < retries) continue; // Retry if timed out
+                throw new Error('Request timed out. The server is taking too long.');
+            }
+            if (attempt < retries && !err.message.includes('unauthorized')) {
+                await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+                continue;
             }
             throw err;
         }
     }
 }
 
+// ============================================
+// API METHODS
+// ============================================
 const API = {
-    register: (data) => apiCall('/companies', { method: 'POST', body: JSON.stringify({ companyName: data.companyName, ownerFullName: data.fullName || data.ownerFullName, ownerUsername: data.username || data.ownerUsername, ownerPassword: data.password || data.ownerPassword, phone: data.phone }) }),
-    login: (data) => apiCall('/auth/login', { method: 'POST', body: JSON.stringify({ company_id: data.company_id, username: data.username, password: data.password, role: data.role }) }),
+    // AUTH
+    login: (data) => apiCall('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+    register: (data) => apiCall('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     verify: () => apiCall('/auth/verify'),
+    
+    // COMPANIES
     getCompanies: () => apiCall('/companies'),
-    getServerInfo: () => apiCall('/server-info'),
+    
+    // PRODUCTS
     getProducts: () => apiCall('/products'),
     getProduct: (id) => apiCall(`/products/${id}`),
-    getByBarcode: (code) => apiCall(`/products/barcode/${encodeURIComponent(code)}`),
+    getProductByBarcode: (code) => apiCall(`/products/barcode/${code}`),
     createProduct: (data) => apiCall('/products', { method: 'POST', body: JSON.stringify(data) }),
     updateProduct: (id, data) => apiCall(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    restock: (id, quantity) => apiCall(`/products/${id}/restock`, { method: 'POST', body: JSON.stringify({ quantity }) }),
     deleteProduct: (id) => apiCall(`/products/${id}`, { method: 'DELETE' }),
+    restockProduct: (id, data) => apiCall(`/products/${id}/restock`, { method: 'POST', body: JSON.stringify(data) }),
+    
+    // SALES
     createSale: (data) => apiCall('/sales', { method: 'POST', body: JSON.stringify(data) }),
+    getSales: () => apiCall('/sales'),
     getSale: (id) => apiCall(`/sales/${id}`),
-    getSaleByReceipt: (receiptNo) => apiCall(`/sales/receipt/${encodeURIComponent(receiptNo)}`),
-    getSales: (params = {}) => { const query = new URLSearchParams(params).toString(); return apiCall('/sales' + (query ? '?' + query : '')); },
-    getReport: (params) => apiCall('/reports/report?' + new URLSearchParams(params)),
-    getYearly: () => apiCall('/reports/yearly'),
-    getMonthly: () => apiCall('/reports/monthly'),
-    getYears: () => apiCall('/reports/years'),
-    createBackup: (type = 'manual') => apiCall('/backup/create', { method: 'POST', body: JSON.stringify({ type }) }),
-    listBackups: () => apiCall('/backup/list'),
-    backupStats: () => apiCall('/backup/stats'),
-    downloadBackup: (type, filename) => { const url = `${API_BASE}/backup/download/${type}/${encodeURIComponent(filename)}?token=${authToken}`; const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); },
-    restoreBackup: (type, filename) => apiCall(`/backup/restore/${type}/${encodeURIComponent(filename)}`, { method: 'POST' }),
-    cleanBackups: () => apiCall('/backup/clean', { method: 'POST' }),
-    syncCloud: () => apiCall('/backup/sync-cloud', { method: 'POST' }),
-    deleteBackup: (type, filename) => apiCall(`/backup/${type}/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
-    getKPIs: (period, start, end) => { const params = new URLSearchParams({ period }); if (start) params.append('start', start); if (end) params.append('end', end); return apiCall('/analytics/kpi?' + params); },
-    getSalesTrend: (period) => apiCall('/analytics/sales-trend?period=' + period),
+    getSaleByReceipt: (receipt) => apiCall(`/sales/receipt/${receipt}`),
+    
+    // REPORTS
+    getReport: (query) => apiCall(`/reports/report?${query}`),
+    getYearlyReport: () => apiCall('/reports/yearly'),
+    getMonthlyReport: () => apiCall('/reports/monthly'),
+    getReportYears: () => apiCall('/reports/years'),
+    
+    // ANALYTICS
+    getKPI: (period) => apiCall(`/analytics/kpi?period=${period}`),
+    getSalesTrend: (period) => apiCall(`/analytics/sales-trend?period=${period}`),
     getHourlySales: () => apiCall('/analytics/hourly-sales'),
-    getTopProducts: (period, limit = 8) => apiCall(`/analytics/top-products?period=${period}&limit=${limit}`),
-    getCategoryPerformance: (period) => apiCall('/analytics/category-performance?period=' + period),
-    getPaymentMethods: (period) => apiCall('/analytics/payment-methods?period=' + period),
-    getProfitAnalysis: (period) => apiCall('/analytics/profit-analysis?period=' + period),
-    getCashierPerformance: (period) => apiCall('/analytics/cashier-performance?period=' + period),
+    getTopProducts: (limit = 8) => apiCall(`/analytics/top-products?limit=${limit}`),
+    getCategoryPerformance: () => apiCall('/analytics/category-performance'),
+    getPaymentMethods: () => apiCall('/analytics/payment-methods'),
+    getProfitAnalysis: () => apiCall('/analytics/profit-analysis'),
+    getCashierPerformance: () => apiCall('/analytics/cashier-performance'),
     getInventoryInsights: () => apiCall('/analytics/inventory-insights'),
     getCustomerInsights: () => apiCall('/analytics/customer-insights'),
-    getDashboardSummary: (period) => apiCall('/analytics/dashboard?period=' + period),
+    
+    // EMPLOYEES
     getEmployees: () => apiCall('/employees'),
-    getEmployeeStats: (period = 'today') => apiCall('/employees/stats?period=' + period),
+    getEmployeeStats: () => apiCall('/employees/stats'),
     getPermissionsMatrix: () => apiCall('/employees/permissions-matrix'),
     createEmployee: (data) => apiCall('/employees', { method: 'POST', body: JSON.stringify(data) }),
     updateEmployee: (id, data) => apiCall(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteEmployee: (id) => apiCall(`/employees/${id}`, { method: 'DELETE' }),
     updateEmployeePermissions: (id, permissions) => apiCall(`/employees/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permissions }) }),
     resetEmployeePassword: (id, newPassword) => apiCall(`/employees/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ newPassword }) }),
-    deleteEmployee: (id) => apiCall(`/employees/${id}`, { method: 'DELETE' }),
-    initiateMpesa: (phone, amount, saleId) => apiCall('/mpesa/stkpush', { method: 'POST', body: JSON.stringify({ phone, amount, saleId }) }),
-    checkMpesaStatus: (checkoutId) => apiCall(`/mpesa/status/${encodeURIComponent(checkoutId)}`),
+    
+    // RETURNS
+    searchSaleForReturn: (query) => apiCall(`/returns/search-sale?${query}`),
+    createReturn: (data) => apiCall('/returns', { method: 'POST', body: JSON.stringify(data) }),
+    getReturns: () => apiCall('/returns'),
+    getReturn: (id) => apiCall(`/returns/${id}`),
+    
+    // M-PESA
+    initiateMpesa: (data) => apiCall('/mpesa/stkpush', { method: 'POST', body: JSON.stringify(data) }),
+    checkMpesaStatus: (id) => apiCall(`/mpesa/status/${id}`),
     getMpesaTransactions: () => apiCall('/mpesa/transactions'),
     getMpesaConfig: () => apiCall('/mpesa/config'),
-    previewImport: (file) => { const formData = new FormData(); formData.append('file', file); return fetch(API_BASE + '/import/preview', { method: 'POST', headers: { 'Authorization': `Bearer ${authToken}` }, body: formData }).then(async (r) => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Preview failed'); return data; }); },
-    importProducts: (rows, mapping) => apiCall('/import/products', { method: 'POST', body: JSON.stringify({ rows, mapping }) }),
-    updatePrices: (rows, mapping) => apiCall('/import/prices', { method: 'POST', body: JSON.stringify({ rows, mapping }) }),
-    searchSaleForReturn: (params) => apiCall('/returns/search-sale?' + new URLSearchParams(params)),
-    createReturn: (data) => apiCall('/returns', { method: 'POST', body: JSON.stringify(data) }),
-    getReturns: (params = {}) => { const query = new URLSearchParams(params).toString(); return apiCall('/returns' + (query ? '?' + query : '')); },
-    getReturn: (id) => apiCall('/returns/' + id)
+    
+    // BACKUP
+    createBackup: (type) => apiCall('/backup/create', { method: 'POST', body: JSON.stringify({ type }) }),
+    getBackups: () => apiCall('/backup/list'),
+    getBackupStats: () => apiCall('/backup/stats'),
+    cleanBackups: () => apiCall('/backup/clean', { method: 'POST' }),
+    deleteBackup: (type, filename) => apiCall(`/backup/${type}/${filename}`, { method: 'DELETE' }),
+    
+    // SETTINGS
+    getServerInfo: () => apiCall('/server-info')
 };
 
 window.API = API;
-window.API_BASE = API_BASE;
