@@ -40,7 +40,7 @@ async function initApp() {
 }
 
 // ============================================================
-// AUTHENTICATION & NAVIGATION
+// AUTHENTICATION
 // ============================================================
 function showAuthScreen() {
     document.getElementById('authScreen').style.display = 'flex';
@@ -100,14 +100,48 @@ async function handleRoleLogin(role) {
     }
 
     try {
-        const data = await API.login({ company_id: companyId, username, password, role });
+        const data = await API.login({
+            company_id: companyId,
+            username: username,
+            password: password,
+            role: role
+        });
+
         localStorage.setItem('pos_token', data.token);
         localStorage.setItem('pos_user', JSON.stringify(data.user));
         localStorage.setItem('pos_company', JSON.stringify(data.company));
+
         currentUser = data.user;
         currentCompany = data.company;
+
         showToast('Login successful!', 'success');
         showMainApp();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function handleRegister() {
+    const companyName = document.getElementById('regCompany').value.trim();
+    const fullName = document.getElementById('regFullName').value.trim();
+    const username = document.getElementById('regUsername').value.trim();
+    const password = document.getElementById('regPassword').value;
+    const confirm = document.getElementById('regConfirm').value;
+    const phone = document.getElementById('regPhone').value.trim();
+
+    if (!companyName || !fullName || !username || !password || !confirm) {
+        showToast('Please fill all required fields', 'error');
+        return;
+    }
+    if (password !== confirm) {
+        showToast('Passwords do not match', 'error');
+        return;
+    }
+
+    try {
+        await API.register({ companyName, fullName, username, password, phone });
+        showToast('Company created! Please login.', 'success');
+        switchAuth('owner');
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -133,11 +167,15 @@ function showMainApp() {
     loadProducts();
     
     setInterval(() => {
+        const now = new Date();
         const dateTimeEl = document.getElementById('dateTime');
-        if (dateTimeEl) dateTimeEl.textContent = new Date().toLocaleString();
+        if (dateTimeEl) dateTimeEl.textContent = now.toLocaleString();
     }, 1000);
 }
 
+// ============================================================
+// NAVIGATION
+// ============================================================
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -154,7 +192,7 @@ function switchPage(pageId) {
 }
 
 // ============================================================
-// PRODUCTS & CART
+// PRODUCTS & CART (UPDATED FOR BULK/PACKS)
 // ============================================================
 async function loadProducts() {
     try {
@@ -184,14 +222,51 @@ function addToCart(productId) {
     if (!product) return;
     if (product.stock <= 0) { showToast('Out of stock', 'error'); return; }
 
-    const existing = cart.find(item => item.productId === productId);
-    if (existing) {
-        if (existing.quantity + 1 > product.stock) { showToast('Not enough stock', 'error'); return; }
-        existing.quantity++;
+    // Check if it's a bulk item
+    const isBulk = product.units_per_pack && product.units_per_pack > 1;
+
+    if (isBulk) {
+        // Ask the cashier how they want to sell it
+        const choice = prompt(`Sell ${product.name} by:\nType '1' for a Single Piece (KES ${product.selling_price})\nType '2' for a Full Pack of ${product.units_per_pack} (KES ${(parseFloat(product.selling_price) * product.units_per_pack).toFixed(2)})`);
+        
+        if (choice === '2') {
+            addItemToCartLogic(product, product.units_per_pack, parseFloat(product.selling_price) * product.units_per_pack, `Pack of ${product.units_per_pack}`);
+        } else if (choice === '1') {
+            addItemToCartLogic(product, 1, parseFloat(product.selling_price), 'Piece');
+        }
     } else {
-        cart.push({ productId: product.id, name: product.name, unit_price: parseFloat(product.selling_price), quantity: 1 });
+        // Standard item (1 piece)
+        addItemToCartLogic(product, 1, parseFloat(product.selling_price), null);
     }
+}
+
+// Helper function to handle the actual cart math safely
+function addItemToCartLogic(product, qtyToAdd, price, displayNameSuffix) {
+    if (product.stock < qtyToAdd) { showToast('Not enough stock for this action', 'error'); return; }
+
+    const cartItemName = displayNameSuffix ? `${product.name} (${displayNameSuffix})` : product.name;
+    
+    // We use a unique ID in the cart so Packs and Pieces don't mix in one line
+    const cartId = `${product.id}-${displayNameSuffix || 'single'}`;
+    const existing = cart.find(item => item.cartId === cartId);
+
+    if (existing) {
+        existing.quantity += 1; // Add 1 pack or 1 piece
+    } else {
+        cart.push({ 
+            cartId: cartId,
+            productId: product.id, 
+            name: cartItemName, 
+            unit_price: price, 
+            quantity: 1, // This is the UI quantity (e.g., 1 pack)
+            actualPiecesDeducted: qtyToAdd // THIS IS CRITICAL (e.g., 12 pieces)
+        });
+    }
+    
+    // Visually deduct from the frontend product list so stock looks right
+    product.stock -= qtyToAdd; 
     renderCart();
+    renderProductGrid(); // Refresh grid to show updated stock
 }
 
 function renderCart() {
@@ -217,9 +292,9 @@ function renderCart() {
                 <div class="cart-item-price">KES ${item.unit_price.toFixed(2)} x ${item.quantity}</div>
             </div>
             <div class="cart-item-actions">
-                <button onclick="updateCartQty(${item.productId}, -1)">-</button>
+                <button onclick="updateCartQty('${item.cartId}', -1)">-</button>
                 <span>${item.quantity}</span>
-                <button onclick="updateCartQty(${item.productId}, 1)">+</button>
+                <button onclick="updateCartQty('${item.cartId}', 1)">+</button>
             </div>
         </div>
     `).join('');
@@ -235,21 +310,35 @@ function renderCart() {
     calculateChange();
 }
 
-function updateCartQty(productId, change) {
-    const item = cart.find(i => i.productId === productId);
+function updateCartQty(cartId, change) {
+    const item = cart.find(i => i.cartId === cartId);
     if (!item) return;
+    
+    const product = products.find(p => p.id === item.productId);
+    
     if (change === -1 && item.quantity === 1) {
-        cart = cart.filter(i => i.productId !== productId);
+        // Remove item entirely and give stock back
+        if (product) product.stock += item.actualPiecesDeducted;
+        cart = cart.filter(i => i.cartId !== cartId);
     } else {
+        if (change === 1 && product && product.stock < item.actualPiecesDeducted) {
+            showToast('Not enough stock', 'error');
+            return;
+        }
         item.quantity += change;
+        if (product) product.stock -= (change * item.actualPiecesDeducted);
     }
+    
     renderCart();
+    renderProductGrid();
 }
 
 function clearCart() {
     cart = [];
     discountAmount = 0;
     renderCart();
+    // Refresh grid to restore the frontend visual stock numbers
+    renderProductGrid();
     showToast('Cart cleared', 'info');
 }
 
@@ -269,7 +358,10 @@ function selectPaymentMethod(method) {
 
 function quickPayment(amount) {
     const input = document.getElementById('paymentInput');
-    if (input) { input.value = amount; calculateChange(); }
+    if (input) {
+        input.value = amount;
+        calculateChange();
+    }
 }
 
 function calculateChange() {
@@ -282,9 +374,11 @@ function calculateChange() {
     
     if (tendered > 0) {
         const change = tendered - total;
-        changeDisplay.innerHTML = change >= 0 
-            ? `<div class="change-due">Change: <strong>KES ${change.toFixed(2)}</strong></div>`
-            : `<div class="change-insufficient">Need: KES ${Math.abs(change).toFixed(2)} more</div>`;
+        if (change >= 0) {
+            changeDisplay.innerHTML = `<div class="change-due">Change: <strong>KES ${change.toFixed(2)}</strong></div>`;
+        } else {
+            changeDisplay.innerHTML = `<div class="change-insufficient">Need: KES ${Math.abs(change).toFixed(2)} more</div>`;
+        }
     } else {
         changeDisplay.innerHTML = '';
     }
@@ -301,9 +395,11 @@ function calculateSplit() {
     const mpesa = parseFloat(mpesaInput.value) || 0;
     const sum = cash + mpesa;
     
-    display.innerHTML = sum >= total 
-        ? `<div class="split-ok">✅ Total covered. Change: KES ${(sum - total).toFixed(2)}</div>`
-        : `<div class="split-warning">⚠️ Remaining: KES ${(total - sum).toFixed(2)}</div>`;
+    if (sum >= total) {
+        display.innerHTML = `<div class="split-ok">✅ Total covered. Change: KES ${(sum - total).toFixed(2)}</div>`;
+    } else {
+        display.innerHTML = `<div class="split-warning">⚠️ Remaining: KES ${(total - sum).toFixed(2)}</div>`;
+    }
 }
 
 function autoFillSplit() {
@@ -375,27 +471,45 @@ async function checkout() {
     } else if (currentPaymentMethod === 'split') {
         paymentCash = parseFloat(document.getElementById('splitCashInput').value) || 0;
         paymentMpesa = parseFloat(document.getElementById('splitMpesaInput').value) || 0;
-        const phoneInput = document.getElementById('splitMpesaPhoneInput');
-        customerPhone = phoneInput ? phoneInput.value.trim() : '';
+        
+        customerPhone = document.getElementById('splitMpesaPhoneInput').value.trim();
+        
         if (paymentMpesa > 0 && !customerPhone) { 
             showToast('Please enter customer phone number for M-Pesa split', 'error'); 
             return; 
         }
     }
     
+    // Map the cart to send the correct number of pieces deducted to the database
     const salePayload = {
-        items: cart, subtotal, discountAmount, total,
-        paymentMethod: currentPaymentMethod, paymentCash, paymentMpesa, customerPhone
+        items: cart.map(item => ({
+            productId: item.productId,
+            name: item.name,
+            unit_price: item.unit_price,
+            quantity: item.quantity, // e.g. 2 Packs
+            totalPiecesDeducted: item.quantity * item.actualPiecesDeducted // e.g. 24 Pieces
+        })),
+        subtotal: subtotal,
+        discountAmount: discountAmount,
+        total: total,
+        paymentMethod: currentPaymentMethod,
+        paymentCash: paymentCash,
+        paymentMpesa: paymentMpesa,
+        customerPhone: customerPhone
     };
 
+    // Offline handling
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
             try {
                 await ipcRenderer.invoke('save-offline-sale', { saleData: salePayload, token: token });
                 showToast("Offline Mode: Sale saved locally.", "warning");
-                clearCart(); loadProducts(); 
-            } catch (err) { showToast("Failed to save offline: " + err.message, "error"); }
+                clearCart();
+                loadProducts(); 
+            } catch (err) {
+                showToast("Failed to save offline: " + err.message, "error");
+            }
             return;
         }
     }
@@ -403,6 +517,7 @@ async function checkout() {
     try {
         let fakeMpesaReceipt = null;
 
+        // M-PESA SIMULATION
         if (paymentMpesa > 0) {
             showToast(`Sending STK Push to ${customerPhone}...`, 'info');
             await API.initiateMpesa(customerPhone, paymentMpesa);
@@ -411,15 +526,14 @@ async function checkout() {
             showToast(`M-Pesa Received: ${fakeMpesaReceipt}`, 'success');
         }
 
+        // Save Sale
         const response = await API.createSale({ ...salePayload, mpesaReceipt: fakeMpesaReceipt });
         
-        const safeUser = currentUser || JSON.parse(localStorage.getItem('pos_user') || '{"username":"Cashier"}');
-        const safeCompany = currentCompany || JSON.parse(localStorage.getItem('pos_company') || '{"name":"SmartPOS"}');
-        
+        // Show Receipt
         showReceipt({
             receiptNo: response.receiptNo || 'R' + Date.now(),
             date: new Date().toISOString(),
-            cashier: safeUser.username,
+            cashier: currentUser.username,
             items: cart,
             total: total,
             paymentCash: paymentCash,
@@ -438,18 +552,15 @@ async function checkout() {
 }
 
 // ============================================================
-// RECEIPT MODAL
+// RECEIPT MODAL GENERATOR
 // ============================================================
 function showReceipt(receipt) {
     const modal = document.getElementById('receiptModal');
     if (!modal) return;
 
-    const safeCompany = currentCompany || JSON.parse(localStorage.getItem('pos_company') || '{"name":"SmartPOS"}');
-    const safeUser = currentUser || JSON.parse(localStorage.getItem('pos_user') || '{"username":"Cashier"}');
-
-    document.getElementById('receiptCompany').textContent = safeCompany.name || 'SmartPOS';
+    document.getElementById('receiptCompany').textContent = currentCompany.name;
     document.getElementById('receiptDate').textContent = new Date(receipt.date).toLocaleString();
-    document.getElementById('receiptCashier').textContent = receipt.cashier || safeUser.username || 'Cashier';
+    document.getElementById('receiptCashier').textContent = receipt.cashier;
 
     let itemsHtml = receipt.items.map(item => `
         <div class="receipt-item" style="display:flex; justify-content:space-between; margin-bottom:4px;">
@@ -460,14 +571,26 @@ function showReceipt(receipt) {
 
     let totalHtml = `
         <div class="receipt-total-row" style="margin-top:10px; border-top:1px dashed #ccc; padding-top:10px; display:flex; justify-content:space-between; font-weight:bold;">
-            <span>Total:</span><span>KES ${receipt.total.toFixed(2)}</span>
+            <span>Total:</span>
+            <span>KES ${receipt.total.toFixed(2)}</span>
         </div>
     `;
-    if (receipt.paymentCash > 0) totalHtml += `<div class="receipt-total-row" style="display:flex; justify-content:space-between;"><span>Cash:</span><span>KES ${receipt.paymentCash.toFixed(2)}</span></div>`;
-    if (receipt.paymentMpesa > 0) totalHtml += `<div class="receipt-total-row" style="display:flex; justify-content:space-between;"><span>M-Pesa:</span><span>KES ${receipt.paymentMpesa.toFixed(2)}</span></div>`;
-    if (receipt.mpesaReceipt) totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>M-Pesa Code:</span><span>${receipt.mpesaReceipt}</span></div>`;
-    if (receipt.customerPhone) totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>Phone:</span><span>${receipt.customerPhone}</span></div>`;
-    if (receipt.change > 0) totalHtml += `<div class="receipt-total-row" style="font-weight:bold; color:#27ae60; display:flex; justify-content:space-between;"><span>Change:</span><span>KES ${receipt.change.toFixed(2)}</span></div>`;
+
+    if (receipt.paymentCash > 0) {
+        totalHtml += `<div class="receipt-total-row" style="display:flex; justify-content:space-between;"><span>Cash:</span><span>KES ${receipt.paymentCash.toFixed(2)}</span></div>`;
+    }
+    if (receipt.paymentMpesa > 0) {
+        totalHtml += `<div class="receipt-total-row" style="display:flex; justify-content:space-between;"><span>M-Pesa:</span><span>KES ${receipt.paymentMpesa.toFixed(2)}</span></div>`;
+    }
+    if (receipt.mpesaReceipt) {
+        totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>M-Pesa Code:</span><span>${receipt.mpesaReceipt}</span></div>`;
+    }
+    if (receipt.customerPhone) {
+        totalHtml += `<div class="receipt-total-row" style="font-size:12px; color:#666; display:flex; justify-content:space-between;"><span>Customer Phone:</span><span>${receipt.customerPhone}</span></div>`;
+    }
+    if (receipt.change > 0) {
+        totalHtml += `<div class="receipt-total-row" style="font-weight:bold; color:#27ae60; display:flex; justify-content:space-between;"><span>Change:</span><span>KES ${receipt.change.toFixed(2)}</span></div>`;
+    }
 
     document.getElementById('receiptBody').innerHTML = itemsHtml + totalHtml;
     modal.style.display = 'flex';
@@ -477,68 +600,7 @@ function closeReceipt() { document.getElementById('receiptModal').style.display 
 function printReceipt() { window.print(); }
 
 // ============================================================
-// ADD ITEM LOGIC
-// ============================================================
-function onItemTypeChange() {
-    const type = document.getElementById('itemType').value;
-    const bulkFields = document.getElementById('bulkFields');
-    const weightFields = document.getElementById('weightFields');
-    const standardStockRow = document.getElementById('standardStockRow');
-    const weightReorderRow = document.getElementById('weightReorderRow');
-
-    if (type === 'bulk') {
-        bulkFields.style.display = 'block'; weightFields.style.display = 'none';
-        standardStockRow.style.display = 'flex'; weightReorderRow.style.display = 'none';
-    } else if (type === 'weight') {
-        bulkFields.style.display = 'none'; weightFields.style.display = 'block';
-        standardStockRow.style.display = 'none'; weightReorderRow.style.display = 'flex';
-    } else {
-        bulkFields.style.display = 'none'; weightFields.style.display = 'none';
-        standardStockRow.style.display = 'flex'; weightReorderRow.style.display = 'none';
-    }
-}
-
-function resetItemForm() {
-    document.getElementById('itemName').value = '';
-    document.getElementById('itemCategory').value = '';
-    document.getElementById('itemBarcode').value = '';
-    document.getElementById('itemCostPrice').value = '';
-    document.getElementById('itemSellingPrice').value = '';
-    document.getElementById('itemStock').value = '';
-    document.getElementById('itemReorder').value = '';
-    document.getElementById('itemType').value = 'inventory';
-    onItemTypeChange();
-    showToast('Form reset', 'info');
-}
-
-async function saveItem() {
-    const name = document.getElementById('itemName').value.trim();
-    const category = document.getElementById('itemCategory').value.trim();
-    const type = document.getElementById('itemType').value;
-    const barcode = document.getElementById('itemBarcode').value.trim();
-    const costPrice = parseFloat(document.getElementById('itemCostPrice').value) || 0;
-    const sellingPrice = parseFloat(document.getElementById('itemSellingPrice').value) || 0;
-    const stock = parseFloat(document.getElementById('itemStock').value) || 0;
-    const reorderLevel = parseFloat(document.getElementById('itemReorder').value) || 5;
-
-    if (!name || !category || !sellingPrice) {
-        showToast('Please fill in Item Name, Category, and Selling Price', 'error');
-        return;
-    }
-
-    try {
-        showToast('Saving item...', 'info');
-        await API.createProduct({ name, category, type, barcode: barcode || null, costPrice, sellingPrice, stock, reorderLevel });
-        showToast('Item saved successfully!', 'success');
-        resetItemForm();
-        if (typeof loadProducts === 'function') loadProducts();
-    } catch (err) {
-        showToast('Failed to save item: ' + err.message, 'error');
-    }
-}
-
-// ============================================================
-// UI HELPERS
+// UI HELPERS & EXPORTS
 // ============================================================
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -548,13 +610,11 @@ function showToast(message, type = 'info') {
     setTimeout(() => { toast.className = 'toast'; }, 3000);
 }
 
-// ============================================================
-// EXPOSE ALL FUNCTIONS TO WINDOW
-// ============================================================
 window.selectRole = selectRole;
 window.backToRoleSelection = backToRoleSelection;
 window.switchAuth = switchAuth;
 window.handleRoleLogin = handleRoleLogin;
+window.handleRegister = handleRegister;
 window.handleLogout = handleLogout;
 window.addToCart = addToCart;
 window.checkout = checkout;
@@ -572,6 +632,3 @@ window.autoFillSplit = autoFillSplit;
 window.showReceipt = showReceipt;
 window.closeReceipt = closeReceipt;
 window.printReceipt = printReceipt;
-window.saveItem = saveItem;
-window.onItemTypeChange = onItemTypeChange;
-window.resetItemForm = resetItemForm;
