@@ -57,7 +57,7 @@ function runSchema() {
     const statements = [
         `CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT, is_active INTEGER DEFAULT 1, owner_user_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'employee', is_active INTEGER DEFAULT 1, permissions TEXT DEFAULT '[]', created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-        `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT, type TEXT DEFAULT 'inventory', barcode TEXT, cost_price REAL DEFAULT 0, selling_price REAL DEFAULT 0, stock REAL DEFAULT 0, reorder_level REAL DEFAULT 5, is_active INTEGER DEFAULT 1)`,
+        `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT, type TEXT DEFAULT 'inventory', barcode TEXT, cost_price REAL DEFAULT 0, selling_price REAL DEFAULT 0, stock REAL DEFAULT 0, reorder_level REAL DEFAULT 5, icon TEXT DEFAULT 'fa-box', units_per_pack INTEGER DEFAULT 1, selling_price_per_single REAL DEFAULT 0, unit_of_measure TEXT DEFAULT 'pcs', is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, cashier_id INTEGER, cashier_name TEXT, receipt_no TEXT UNIQUE, subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, total REAL DEFAULT 0, payment_cash REAL DEFAULT 0, payment_mpesa REAL DEFAULT 0, change_amount REAL DEFAULT 0, payment_method TEXT DEFAULT 'cash', mpesa_receipt TEXT, customer_phone TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
         `CREATE TABLE IF NOT EXISTS sale_items (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL, product_id INTEGER, product_name TEXT, quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, total REAL DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS returns (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, sale_id INTEGER, receipt_no TEXT, refund_method TEXT, reason TEXT, notes TEXT, total_refund REAL DEFAULT 0, cashier_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
@@ -110,7 +110,9 @@ app.use(express.static(FRONTEND_PATH));
 // ============================================================
 // API ROUTES
 // ============================================================
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 app.get('/api/companies', (req, res) => db.all("SELECT id, name FROM companies ORDER BY name ASC", [], (err, rows) => res.json(rows || [])));
+
 app.post('/api/auth/login', (req, res) => {
     const { company_id, username, password, role } = req.body;
     db.get(`SELECT u.*, c.name as company_name FROM users u JOIN companies c ON c.id = u.company_id WHERE u.company_id = ? AND u.username = ?`, [company_id, username], async (err, user) => {
@@ -120,9 +122,39 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
-// 🎯 PRODUCTS & SALES
-app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1", [req.user.companyId], (err, rows) => res.json(rows || [])));
+// 🎯 PRODUCTS (GET, POST, PUT, DELETE)
+app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1 ORDER BY name ASC", [req.user.companyId], (err, rows) => res.json(rows || [])));
 
+app.post('/api/products', authenticate, (req, res) => {
+    const { name, category, type, barcode, costPrice, sellingPrice, stock, reorderLevel, icon, unitsPerPack, sellingPricePerSingle, unitOfMeasure } = req.body;
+    
+    db.run(`INSERT INTO products (company_id, name, category, type, barcode, cost_price, selling_price, stock, reorder_level, icon, units_per_pack, selling_price_per_single, unit_of_measure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.user.companyId, name, category, type || 'inventory', barcode || null, costPrice || 0, sellingPrice || 0, stock || 0, reorderLevel || 5, icon || 'fa-box', unitsPerPack || 1, sellingPricePerSingle || 0, unitOfMeasure || 'pcs'],
+        function (err) { 
+            if (err) return res.status(500).json({ error: err.message }); 
+            res.json({ success: true, id: this.lastID }); 
+        });
+});
+
+app.put('/api/products/:id', authenticate, (req, res) => {
+    const { name, category, type, barcode, costPrice, sellingPrice, stock, reorderLevel, icon, unitsPerPack, sellingPricePerSingle, unitOfMeasure } = req.body;
+    
+    db.run(`UPDATE products SET name=?, category=?, type=?, barcode=?, cost_price=?, selling_price=?, stock=?, reorder_level=?, icon=?, units_per_pack=?, selling_price_per_single=?, unit_of_measure=? WHERE id=? AND company_id=?`,
+        [name, category, type, barcode || null, costPrice || 0, sellingPrice || 0, stock || 0, reorderLevel || 5, icon || 'fa-box', unitsPerPack || 1, sellingPricePerSingle || 0, unitOfMeasure || 'pcs', req.params.id, req.user.companyId],
+        function (err) { 
+            if (err) return res.status(500).json({ error: err.message }); 
+            res.json({ success: true }); 
+        });
+});
+
+app.delete('/api/products/:id', authenticate, (req, res) => {
+    db.run("UPDATE products SET is_active = 0 WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], function (err) { 
+        if (err) return res.status(500).json({ error: err.message }); 
+        res.json({ success: true }); 
+    });
+});
+
+// 🎯 SALES
 app.post('/api/sales', authenticate, (req, res) => {
     const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
@@ -131,9 +163,14 @@ app.post('/api/sales', authenticate, (req, res) => {
         [req.user.companyId, req.user.userId, req.user.username, receiptNo, subtotal, discountAmount || 0, total, paymentCash || 0, paymentMpesa || 0, paymentMethod, customerPhone || null, mpesaReceipt || null],
         function (err) {
             if (err) return res.status(500).json({ error: err.message });
-            const saleId = this.lastID; let completed = 0;
+            const saleId = this.lastID; 
+            let completed = 0;
+            
+            if (items.length === 0) return res.json({ success: true, saleId, receiptNo });
+            
             items.forEach(item => {
-                db.run(`INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, [saleId, item.productId, item.name, item.quantity, item.unit_price, (item.unit_price * item.quantity)], () => {
+                db.run(`INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, 
+                [saleId, item.productId, item.name, item.quantity, item.unit_price, (item.unit_price * item.quantity)], () => {
                     db.run("UPDATE products SET stock = stock - ? WHERE id = ?", [item.quantity, item.productId], () => {
                         completed++;
                         if (completed === items.length) res.json({ success: true, saleId, receiptNo });
