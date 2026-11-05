@@ -158,7 +158,7 @@ app.delete('/api/products/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 SALES & EMPLOYEES & ANALYTICS
+// 🎯 SALES 
 app.post('/api/sales', authenticate, (req, res) => {
     const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
@@ -216,13 +216,22 @@ app.post('/api/employees', authenticate, async (req, res) => {
     }
 
     try {
-        const hash = await bcrypt.hash(password, 10);
-        db.run(`INSERT INTO users (company_id, username, password_hash, full_name, role, permissions) VALUES (?, ?, ?, ?, ?, ?)`,
-            [req.user.companyId, username, hash, fullName, role || 'employee', JSON.stringify(permissions || [])],
-            function (err) {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true, id: this.lastID });
-            });
+        // Check for duplicate username first
+        db.get("SELECT id FROM users WHERE company_id = ? AND username = ?", [req.user.companyId, username], async (err, existingUser) => {
+            if (err) return res.status(500).json({ error: err.message });
+            
+            if (existingUser) {
+                return res.status(400).json({ error: 'Username already exists. Please choose another.' });
+            }
+
+            const hash = await bcrypt.hash(password, 10);
+            db.run(`INSERT INTO users (company_id, username, password_hash, full_name, role, permissions) VALUES (?, ?, ?, ?, ?, ?)`,
+                [req.user.companyId, username, hash, fullName, role || 'employee', JSON.stringify(permissions || [])],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true, id: this.lastID });
+                });
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
