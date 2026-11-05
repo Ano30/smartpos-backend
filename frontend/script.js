@@ -192,7 +192,7 @@ function switchPage(pageId) {
 }
 
 // ============================================================
-// PRODUCTS & CART (UPDATED FOR BULK/PACKS)
+// PRODUCTS & CART (BULK/PACK LOGIC)
 // ============================================================
 async function loadProducts() {
     try {
@@ -222,11 +222,9 @@ function addToCart(productId) {
     if (!product) return;
     if (product.stock <= 0) { showToast('Out of stock', 'error'); return; }
 
-    // Check if it's a bulk item
     const isBulk = product.units_per_pack && product.units_per_pack > 1;
 
     if (isBulk) {
-        // Ask the cashier how they want to sell it
         const choice = prompt(`Sell ${product.name} by:\nType '1' for a Single Piece (KES ${product.selling_price})\nType '2' for a Full Pack of ${product.units_per_pack} (KES ${(parseFloat(product.selling_price) * product.units_per_pack).toFixed(2)})`);
         
         if (choice === '2') {
@@ -235,38 +233,33 @@ function addToCart(productId) {
             addItemToCartLogic(product, 1, parseFloat(product.selling_price), 'Piece');
         }
     } else {
-        // Standard item (1 piece)
         addItemToCartLogic(product, 1, parseFloat(product.selling_price), null);
     }
 }
 
-// Helper function to handle the actual cart math safely
 function addItemToCartLogic(product, qtyToAdd, price, displayNameSuffix) {
     if (product.stock < qtyToAdd) { showToast('Not enough stock for this action', 'error'); return; }
 
     const cartItemName = displayNameSuffix ? `${product.name} (${displayNameSuffix})` : product.name;
-    
-    // We use a unique ID in the cart so Packs and Pieces don't mix in one line
     const cartId = `${product.id}-${displayNameSuffix || 'single'}`;
     const existing = cart.find(item => item.cartId === cartId);
 
     if (existing) {
-        existing.quantity += 1; // Add 1 pack or 1 piece
+        existing.quantity += 1; 
     } else {
         cart.push({ 
             cartId: cartId,
             productId: product.id, 
             name: cartItemName, 
             unit_price: price, 
-            quantity: 1, // This is the UI quantity (e.g., 1 pack)
-            actualPiecesDeducted: qtyToAdd // THIS IS CRITICAL (e.g., 12 pieces)
+            quantity: 1, 
+            actualPiecesDeducted: qtyToAdd 
         });
     }
     
-    // Visually deduct from the frontend product list so stock looks right
     product.stock -= qtyToAdd; 
     renderCart();
-    renderProductGrid(); // Refresh grid to show updated stock
+    renderProductGrid(); 
 }
 
 function renderCart() {
@@ -317,7 +310,6 @@ function updateCartQty(cartId, change) {
     const product = products.find(p => p.id === item.productId);
     
     if (change === -1 && item.quantity === 1) {
-        // Remove item entirely and give stock back
         if (product) product.stock += item.actualPiecesDeducted;
         cart = cart.filter(i => i.cartId !== cartId);
     } else {
@@ -337,7 +329,6 @@ function clearCart() {
     cart = [];
     discountAmount = 0;
     renderCart();
-    // Refresh grid to restore the frontend visual stock numbers
     renderProductGrid();
     showToast('Cart cleared', 'info');
 }
@@ -480,14 +471,13 @@ async function checkout() {
         }
     }
     
-    // Map the cart to send the correct number of pieces deducted to the database
     const salePayload = {
         items: cart.map(item => ({
             productId: item.productId,
             name: item.name,
             unit_price: item.unit_price,
-            quantity: item.quantity, // e.g. 2 Packs
-            totalPiecesDeducted: item.quantity * item.actualPiecesDeducted // e.g. 24 Pieces
+            quantity: item.quantity, 
+            totalPiecesDeducted: item.quantity * item.actualPiecesDeducted 
         })),
         subtotal: subtotal,
         discountAmount: discountAmount,
@@ -498,7 +488,6 @@ async function checkout() {
         customerPhone: customerPhone
     };
 
-    // Offline handling
     if (window.require && window.require('electron')) {
         const { ipcRenderer } = window.require('electron');
         if (!navigator.onLine) {
@@ -517,7 +506,6 @@ async function checkout() {
     try {
         let fakeMpesaReceipt = null;
 
-        // M-PESA SIMULATION
         if (paymentMpesa > 0) {
             showToast(`Sending STK Push to ${customerPhone}...`, 'info');
             await API.initiateMpesa(customerPhone, paymentMpesa);
@@ -526,10 +514,8 @@ async function checkout() {
             showToast(`M-Pesa Received: ${fakeMpesaReceipt}`, 'success');
         }
 
-        // Save Sale
         const response = await API.createSale({ ...salePayload, mpesaReceipt: fakeMpesaReceipt });
         
-        // Show Receipt
         showReceipt({
             receiptNo: response.receiptNo || 'R' + Date.now(),
             date: new Date().toISOString(),
@@ -551,9 +537,6 @@ async function checkout() {
     }
 }
 
-// ============================================================
-// RECEIPT MODAL GENERATOR
-// ============================================================
 function showReceipt(receipt) {
     const modal = document.getElementById('receiptModal');
     if (!modal) return;
@@ -599,9 +582,6 @@ function showReceipt(receipt) {
 function closeReceipt() { document.getElementById('receiptModal').style.display = 'none'; }
 function printReceipt() { window.print(); }
 
-// ============================================================
-// UI HELPERS & EXPORTS
-// ============================================================
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     if (!toast) return;
