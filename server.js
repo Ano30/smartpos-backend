@@ -113,7 +113,6 @@ app.use(express.static(FRONTEND_PATH));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 app.get('/api/companies', (req, res) => db.all("SELECT id, name FROM companies ORDER BY name ASC", [], (err, rows) => res.json(rows || [])));
 
-// Server Info (Fixes console 404)
 app.get('/api/server-info', (req, res) => {
     res.json({ status: 'online', platform: 'render', version: '1.0.0' });
 });
@@ -151,6 +150,7 @@ app.put('/api/products/:id', authenticate, (req, res) => {
         });
 });
 
+// 🎯 DELETE PRODUCT (SOFT DELETE)
 app.delete('/api/products/:id', authenticate, (req, res) => {
     db.run("UPDATE products SET is_active = 0 WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], function (err) { 
         if (err) return res.status(500).json({ error: err.message }); 
@@ -158,7 +158,7 @@ app.delete('/api/products/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 SALES & EMPLOYEES & ANALYTICS
+// 🎯 SALES 
 app.post('/api/sales', authenticate, (req, res) => {
     const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
