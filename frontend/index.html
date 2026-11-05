@@ -1467,6 +1467,63 @@
         checkScreenSize();
         window.addEventListener('resize', checkScreenSize);
     });
+
+    // ============================================================
+    // 🎯 NEW BULK ITEM LOGIC ADDED DIRECTLY HERE
+    // ============================================================
+    
+    function onItemTypeChange() {
+        const type = document.getElementById('itemType').value;
+        
+        // Show/Hide Bulk fields
+        const bulkFields = document.getElementById('bulkFields');
+        if (bulkFields) {
+            bulkFields.style.display = (type === 'bulk') ? 'block' : 'none';
+        }
+        
+        // Show/Hide Weight fields
+        const weightFields = document.getElementById('weightFields');
+        if (weightFields) {
+            weightFields.style.display = (type === 'weight') ? 'block' : 'none';
+        }
+        
+        // Show/Hide Standard Stock Row (Hide it for weight-based items)
+        const standardStockRow = document.getElementById('standardStockRow');
+        if (standardStockRow) {
+            standardStockRow.style.display = (type === 'weight') ? 'none' : 'flex';
+        }
+
+        // Show/Hide Weight Reorder Row
+        const weightReorderRow = document.getElementById('weightReorderRow');
+        if (weightReorderRow) {
+            weightReorderRow.style.display = (type === 'weight') ? 'flex' : 'none';
+        }
+    }
+    window.onItemTypeChange = onItemTypeChange;
+
+    function calculatePackStock() {
+        const packCount = parseFloat(document.getElementById('packCount').value) || 0;
+        const unitsPerPack = parseFloat(document.getElementById('itemUnitsPerPack').value) || 12;
+        const totalPieces = packCount * unitsPerPack;
+        document.getElementById('totalPieces').value = totalPieces;
+    }
+    window.calculatePackStock = calculatePackStock;
+
+    function applyPackCountToStock() {
+        const totalPieces = document.getElementById('totalPieces').value;
+        if (totalPieces) {
+            document.getElementById('itemStock').value = totalPieces;
+            showToast(`Stock updated to ${totalPieces} total pieces`, 'success');
+        }
+    }
+    window.applyPackCountToStock = applyPackCountToStock;
+
+    function setPackPreset(units, label) {
+        document.getElementById('itemUnitsPerPack').value = units;
+        calculatePackStock();
+        showToast(`Set to ${label} (${units} units)`, 'info');
+    }
+    window.setPackPreset = setPackPreset;
     </script>
 </body>
 </html>
