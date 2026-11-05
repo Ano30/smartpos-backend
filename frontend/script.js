@@ -189,15 +189,19 @@ function switchPage(pageId) {
     if (pageId === 'returns' && typeof initReturnsPage === 'function') {
         initReturnsPage();
     }
+    if (pageId === 'inventory') {
+        renderInventoryTable();
+    }
 }
 
 // ============================================================
-// PRODUCTS & CART (BULK/PACK LOGIC)
+// PRODUCTS & CART
 // ============================================================
 async function loadProducts() {
     try {
         products = await API.getProducts();
         renderProductGrid();
+        renderInventoryTable();
     } catch (err) {
         console.warn('[App] Failed to load products:', err.message);
         showToast('Could not load products. Check your internet or wait for server to wake up.', 'error');
@@ -215,6 +219,43 @@ function renderProductGrid() {
             <div class="product-stock">Stock: ${p.stock}</div>
         </div>
     `).join('');
+}
+
+// 🎯 INVENTORY TABLE & DELETE LOGIC
+function renderInventoryTable() {
+    const tbody = document.getElementById('inventoryTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = products.map((p, index) => `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${p.name}</td>
+            <td>${p.category || '-'}</td>
+            <td>${p.type}</td>
+            <td>KES ${p.cost_price}</td>
+            <td>KES ${p.selling_price}</td>
+            <td>${p.stock}</td>
+            <td>${p.barcode || '-'}</td>
+            <td>
+                <button onclick="deleteItem(${p.id}, '${p.name}')" style="background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function deleteItem(productId, productName) {
+    if (!confirm(`Are you sure you want to delete "${productName}"?`)) return;
+
+    try {
+        showToast('Deleting item...', 'info');
+        await API.deleteProduct(productId);
+        showToast('Item deleted!', 'success');
+        loadProducts(); 
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 }
 
 function addToCart(productId) {
@@ -612,3 +653,5 @@ window.autoFillSplit = autoFillSplit;
 window.showReceipt = showReceipt;
 window.closeReceipt = closeReceipt;
 window.printReceipt = printReceipt;
+window.deleteItem = deleteItem;
+window.renderInventoryTable = renderInventoryTable;
