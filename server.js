@@ -122,7 +122,6 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
-// 🎯 PRODUCTS (GET, POST, PUT, DELETE)
 app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1 ORDER BY name ASC", [req.user.companyId], (err, rows) => res.json(rows || [])));
 
 app.post('/api/products', authenticate, (req, res) => {
@@ -154,7 +153,7 @@ app.delete('/api/products/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 SALES
+// 🎯 SALES (UPDATED TO DEDUCT TOTAL PIECES)
 app.post('/api/sales', authenticate, (req, res) => {
     const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
@@ -169,9 +168,12 @@ app.post('/api/sales', authenticate, (req, res) => {
             if (items.length === 0) return res.json({ success: true, saleId, receiptNo });
             
             items.forEach(item => {
+                // Use totalPiecesDeducted (calculated in script.js) OR fallback to quantity
+                const qtyToDeduct = item.totalPiecesDeducted || item.quantity;
+
                 db.run(`INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, 
-                [saleId, item.productId, item.name, item.quantity, item.unit_price, (item.unit_price * item.quantity)], () => {
-                    db.run("UPDATE products SET stock = stock - ? WHERE id = ?", [item.quantity, item.productId], () => {
+                [saleId, item.productId, item.name, qtyToDeduct, item.unit_price, (item.unit_price * item.quantity)], () => {
+                    db.run("UPDATE products SET stock = stock - ? WHERE id = ?", [qtyToDeduct, item.productId], () => {
                         completed++;
                         if (completed === items.length) res.json({ success: true, saleId, receiptNo });
                     });
@@ -180,7 +182,6 @@ app.post('/api/sales', authenticate, (req, res) => {
         });
 });
 
-// 🎯 MPESA SIMULATION
 app.post('/api/mpesa/stkpush', authenticate, (req, res) => {
     const { phone, amount } = req.body;
     const checkoutId = 'SIM_' + Date.now();
@@ -199,7 +200,6 @@ app.get('/api/mpesa/status/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 RETURNS
 app.get('/api/returns/search-sale', authenticate, (req, res) => {
     const { receipt, phone } = req.query; 
     let query = "SELECT * FROM sales WHERE company_id = ?"; const params = [req.user.companyId];
