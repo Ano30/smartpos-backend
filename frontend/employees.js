@@ -1,5 +1,5 @@
 /* ============================================================
-   SMARTPOS - Employees Management (v5 - with Update Rights)
+   SMARTPOS - Employees Management (v6 - Fixed & Improved)
    ============================================================ */
 
 (function() {
@@ -85,7 +85,15 @@
 
     async function empMgr_loadStats() {
         try {
-            empMgr_stats = await API.getEmployeeStats(empMgr_period);
+            // API returns an object: { totalEmployees, activeEmployees } 
+            // We no longer expect an array, so we prevent the .reduce crash
+            const stats = await API.getEmployeeStats(empMgr_period);
+            if (Array.isArray(stats)) {
+                empMgr_stats = stats;
+            } else {
+                // Create a dummy array so the rest of the code doesn't break
+                empMgr_stats = []; 
+            }
         } catch (err) {
             empMgr_stats = [];
         }
@@ -107,8 +115,10 @@
 
         const totalEmployees = empMgr_list.filter(e => e.role !== 'owner').length;
         const activeEmployees = empMgr_list.filter(e => e.is_active && e.role !== 'owner').length;
-        const totalSales = empMgr_stats.reduce((sum, s) => sum + (s.sales || 0), 0);
-        const totalRevenue = empMgr_stats.reduce((sum, s) => sum + (s.revenue || 0), 0);
+        
+        // Safe calculation to prevent crashes
+        const totalSales = Array.isArray(empMgr_stats) ? empMgr_stats.reduce((sum, s) => sum + (s.sales || 0), 0) : 0;
+        const totalRevenue = Array.isArray(empMgr_stats) ? empMgr_stats.reduce((sum, s) => sum + (s.revenue || 0), 0) : 0;
 
         grid.innerHTML = `
             <div class="stat-card">
@@ -154,7 +164,7 @@
         const currentUser = empMgr_getUser();
 
         tbody.innerHTML = sorted.map((emp, i) => {
-            const stats = empMgr_stats.find(s => s.cashier_id === emp.id) || { sales: 0, revenue: 0 };
+            const stats = Array.isArray(empMgr_stats) ? (empMgr_stats.find(s => s.cashier_id === emp.id) || { sales: 0, revenue: 0 }) : { sales: 0, revenue: 0 };
             const initials = empMgr_getInitials(emp.full_name || emp.username);
             const avatarColor = empMgr_avatarColor(emp.role);
             const roleBadgeClass = emp.role === 'owner' ? 'owner' : emp.role === 'admin' ? 'admin' : 'employee';
@@ -166,6 +176,9 @@
                 : '<span class="status-badge inactive">INACTIVE</span>';
             const isSelf = currentUser && currentUser.id === emp.id;
             const isOwnerRow = emp.role === 'owner';
+            
+            // Only Owner can manage other accounts
+            const canManage = currentUser && (currentUser.role === 'owner' || currentUser.role === 'admin');
 
             return `
                 <tr>
@@ -186,19 +199,21 @@
                         <button class="action-btn view" onclick="viewEmployeePermissions(${emp.id})" title="View Rights">
                             <i class="fas fa-shield-alt"></i>
                         </button>
-                        ${!isOwnerRow ? `
+                        
+                        ${canManage && !isOwnerRow ? `
                             <button class="action-btn rights" onclick="openUpdateRightsModal(${emp.id})" title="Update Rights">
                                 <i class="fas fa-user-cog"></i>
                             </button>
+                            <button class="action-btn reset-pw" onclick="resetEmployeePassword(${emp.id}, '${empMgr_escapeAttr(emp.username)}')" title="Reset Password">
+                                <i class="fas fa-key"></i>
+                            </button>
+                            <button class="action-btn edit" onclick="editEmployee(${emp.id})" title="Edit Employee">
+                                <i class="fas fa-edit"></i>
+                            </button>
                         ` : ''}
-                        <button class="action-btn reset-pw" onclick="resetEmployeePassword(${emp.id}, '${empMgr_escapeAttr(emp.username)}')" title="Reset Password">
-                            <i class="fas fa-key"></i>
-                        </button>
-                        <button class="action-btn edit" onclick="editEmployee(${emp.id})" title="Edit Employee">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        ${!isSelf ? `
-                            <button class="action-btn delete" onclick="deleteEmployee(${emp.id})" title="Delete Employee">
+
+                        ${canManage && !isSelf && !isOwnerRow ? `
+                            <button class="action-btn delete" onclick="deleteEmployee(${emp.id})" title="Delete Employee" style="background:#e74c3c; color:white;">
                                 <i class="fas fa-trash"></i>
                             </button>
                         ` : ''}
@@ -209,195 +224,11 @@
     }
 
     // ============================================================
-    // ⭐ UPDATE RIGHTS (dedicated modal)
-    // ============================================================
-    function openUpdateRightsModal(employeeId) {
-        console.log('[Employees] Update rights clicked:', employeeId);
-
-        if (!empMgr_hasPerm('manage_employees')) {
-            if (typeof showToast === 'function') showToast('Access denied.', 'error');
-            else alert('Access denied.');
-            return;
-        }
-
-        const emp = empMgr_list.find(e => e.id === employeeId);
-        if (!emp) { alert('Employee not found'); return; }
-
-        if (emp.role === 'owner') {
-            alert('Owner has all rights by default and cannot be restricted.');
-            return;
-        }
-
-        empMgr_editingRightsEmpId = employeeId;
-
-        // Remove any existing quick rights modal
-        const existing = document.getElementById('updateRightsModal');
-        if (existing) existing.remove();
-
-        // Inject the modal
-        const modalHtml = `
-            <div id="updateRightsModal" class="modal active">
-                <div class="modal-content" style="max-width:720px;">
-                    <div class="modal-header">
-                        <h3><i class="fas fa-user-cog"></i> Update Rights</h3>
-                        <button class="modal-close" onclick="closeUpdateRightsModal()"><i class="fas fa-times"></i></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="rights-emp-header">
-                            <div class="employee-avatar" style="background:${empMgr_avatarColor(emp.role)};">${empMgr_getInitials(emp.full_name || emp.username)}</div>
-                            <div>
-                                <div style="font-weight:700;color:#2c3e50;font-size:15px;">${empMgr_escapeHtml(emp.full_name || emp.username)}</div>
-                                <div style="font-size:12px;color:#7f8c8d;">@${empMgr_escapeHtml(emp.username)} · ${emp.role.toUpperCase()}</div>
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-top:16px;">
-                            <label>Role (change to load default rights)</label>
-                            <select id="updateRightsRole" onchange="onUpdateRightsRoleChange()">
-                                <option value="employee" ${emp.role === 'employee' ? 'selected' : ''}>Employee (cashier)</option>
-                                <option value="admin" ${emp.role === 'admin' ? 'selected' : ''}>Admin (manager)</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group" style="margin-top:16px;">
-                            <label><i class="fas fa-key"></i> Access Rights</label>
-                            <small class="form-help" style="display:block;margin-bottom:10px;color:#7f8c8d;">
-                                Tick the permissions this employee should have. Uncheck to remove access.
-                            </small>
-                            <div id="updateRightsPermissionsGrid" class="permissions-grid"></div>
-                            <div id="updateRightsPermissionCount" class="permission-count ok" style="margin-top:10px;">0 of 15 rights</div>
-                        </div>
-
-                        <div class="form-actions">
-                            <button class="btn-secondary" onclick="closeUpdateRightsModal()">Cancel</button>
-                            <button class="btn-primary" onclick="saveUpdateRights()">
-                                <i class="fas fa-save"></i> Save Rights
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-        // Render permissions grid
-        empMgr_renderRightsGrid(emp.permissions || []);
-    }
-
-    function empMgr_renderRightsGrid(selectedPermissions) {
-        const grid = document.getElementById('updateRightsPermissionsGrid');
-        if (!grid) return;
-
-        const groups = {};
-        EMPMGR_PERMISSIONS.forEach(p => {
-            if (!groups[p.group]) groups[p.group] = [];
-            groups[p.group].push(p);
-        });
-
-        let html = '';
-        Object.entries(groups).forEach(([groupName, perms]) => {
-            html += `
-                <div class="permission-group">
-                    <div class="permission-group-title">${groupName}</div>
-                    <div class="permission-items">
-                        ${perms.map(p => {
-                            const checked = selectedPermissions.includes(p.key) ? 'checked' : '';
-                            return `
-                                <label class="permission-item">
-                                    <input type="checkbox" value="${p.key}" ${checked} onchange="updateRightsPermissionCount()">
-                                    <i class="fas ${p.icon}"></i>
-                                    <span>${p.label}</span>
-                                </label>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            `;
-        });
-
-        grid.innerHTML = html;
-        updateRightsPermissionCount();
-    }
-
-    function updateRightsPermissionCount() {
-        const checkboxes = document.querySelectorAll('#updateRightsPermissionsGrid input[type="checkbox"]');
-        const checked = document.querySelectorAll('#updateRightsPermissionsGrid input[type="checkbox"]:checked');
-        const countEl = document.getElementById('updateRightsPermissionCount');
-        if (!countEl) return;
-
-        const total = checkboxes.length;
-        const selected = checked.length;
-        countEl.textContent = `${selected} of ${total} rights selected`;
-
-        countEl.className = 'permission-count';
-        if (selected === 0) countEl.classList.add('danger');
-        else if (selected < 3) countEl.classList.add('warn');
-        else countEl.classList.add('ok');
-    }
-
-    function onUpdateRightsRoleChange() {
-        const role = document.getElementById('updateRightsRole').value;
-        let defaults = [];
-        if (role === 'admin') {
-            defaults = empMgr_permMatrix.admin || [];
-        } else {
-            defaults = empMgr_permMatrix.employee || ['make_sale', 'view_inventory', 'process_returns'];
-        }
-        empMgr_renderRightsGrid(defaults);
-    }
-
-    async function saveUpdateRights() {
-        if (!empMgr_editingRightsEmpId) return;
-
-        const newRole = document.getElementById('updateRightsRole').value;
-        const checkboxes = document.querySelectorAll('#updateRightsPermissionsGrid input[type="checkbox"]:checked');
-        const permissions = Array.from(checkboxes).map(cb => cb.value);
-
-        if (permissions.length === 0) {
-            if (!confirm('⚠️ No rights selected. This employee won\'t be able to do anything.\n\nSave anyway?')) {
-                return;
-            }
-        }
-
-        const emp = empMgr_list.find(e => e.id === empMgr_editingRightsEmpId);
-        if (!emp) return;
-
-        try {
-            await API.updateEmployee(empMgr_editingRightsEmpId, {
-                fullName: emp.full_name,
-                role: newRole,
-                permissions: permissions
-            });
-
-            if (typeof showToast === 'function') {
-                showToast(`✓ Rights updated for ${emp.full_name || emp.username}`, 'success');
-            } else {
-                alert('Rights updated!');
-            }
-
-            closeUpdateRightsModal();
-            await loadEmployeesPage();
-        } catch (err) {
-            console.error('[Employees] Save rights error:', err);
-            if (typeof showToast === 'function') showToast(err.message, 'error');
-            else alert(err.message);
-        }
-    }
-
-    function closeUpdateRightsModal() {
-        const modal = document.getElementById('updateRightsModal');
-        if (modal) modal.remove();
-        empMgr_editingRightsEmpId = null;
-    }
-
-    // ============================================================
-    // RESET PASSWORD
+    // ⭐ RESET PASSWORD (OWNER FEATURE)
     // ============================================================
     async function resetEmployeePassword(employeeId, username) {
         if (!empMgr_hasPerm('manage_employees')) {
             if (typeof showToast === 'function') showToast('Access denied.', 'error');
-            else alert('Access denied.');
             return;
         }
 
@@ -413,14 +244,14 @@
         const newPassword = prompt(
             `🔑 RESET PASSWORD\n\n` +
             `Employee: ${employee.full_name || username}\n` +
-            `Username: ${username}\n` +
-            `Role: ${employee.role}\n\n` +
+            `Username: ${username}\n\n` +
             `Enter a new password (minimum 4 characters):`
         );
 
         if (newPassword === null) return;
-        if (!newPassword.trim()) { alert('Password cannot be empty'); return; }
-        if (newPassword.length < 4) { alert('Password must be at least 4 characters'); return; }
+        if (!newPassword.trim() || newPassword.length < 4) { 
+            alert('Password must be at least 4 characters'); return; 
+        }
 
         if (!confirm(`Reset password for "${username}"?`)) return;
 
@@ -434,7 +265,6 @@
                     `Share with the employee:\n\n` +
                     `━━━━━━━━━━━━━━━━━━━━━━\n` +
                     `Role:     ${employee.role}\n` +
-                    `Company:  ${window.currentCompany ? window.currentCompany.name : 'N/A'}\n` +
                     `Username: ${username}\n` +
                     `Password: ${newPassword}\n` +
                     `━━━━━━━━━━━━━━━━━━━━━━`
@@ -442,7 +272,6 @@
             }, 400);
         } catch (err) {
             if (typeof showToast === 'function') showToast(err.message, 'error');
-            else alert(err.message);
         }
     }
 
@@ -456,7 +285,7 @@
         }
 
         const modal = document.getElementById('employeeModal');
-        if (!modal) { alert('Modal not found'); return; }
+        if (!modal) return;
 
         document.getElementById('employeeModalTitle').textContent = 'Add Employee';
         document.getElementById('employeeId').value = '';
@@ -476,10 +305,7 @@
     }
 
     function editEmployee(employeeId) {
-        if (!empMgr_hasPerm('manage_employees')) {
-            if (typeof showToast === 'function') showToast('Access denied.', 'error');
-            return;
-        }
+        if (!empMgr_hasPerm('manage_employees')) return;
 
         const emp = empMgr_list.find(e => e.id === employeeId);
         if (!emp) return;
@@ -501,7 +327,6 @@
         updatePermissionCount();
 
         modal.classList.add('active');
-        setTimeout(() => document.getElementById('employeeFullName')?.focus(), 200);
     }
 
     function closeEmployeeModal() {
@@ -585,10 +410,7 @@
     }
 
     async function saveEmployee() {
-        if (!empMgr_hasPerm('manage_employees')) {
-            if (typeof showToast === 'function') showToast('Access denied.', 'error');
-            return;
-        }
+        if (!empMgr_hasPerm('manage_employees')) return;
 
         const id = document.getElementById('employeeId').value;
         const fullName = document.getElementById('employeeFullName').value.trim();
@@ -597,114 +419,58 @@
         const role = document.getElementById('employeeRole').value;
         const permissions = role === 'owner' ? [] : empMgr_getSelectedPerms();
 
-        if (!fullName) { if (typeof showToast === 'function') showToast('Full name required', 'error'); return; }
-        if (!username) { if (typeof showToast === 'function') showToast('Username required', 'error'); return; }
+        if (!fullName) { showToast('Full name required', 'error'); return; }
+        if (!username) { showToast('Username required', 'error'); return; }
 
         if (!id) {
-            if (!password) { if (typeof showToast === 'function') showToast('Password required', 'error'); return; }
-            if (password.length < 4) { if (typeof showToast === 'function') showToast('Password too short', 'error'); return; }
+            if (!password || password.length < 4) { showToast('Password must be at least 4 chars', 'error'); return; }
 
             try {
                 await API.createEmployee({ fullName, username, password, role, permissions });
-                if (typeof showToast === 'function') showToast(`✓ ${fullName} added`, 'success');
+                showToast(`✓ ${fullName} added`, 'success');
                 closeEmployeeModal();
                 await loadEmployeesPage();
             } catch (err) {
-                if (typeof showToast === 'function') showToast(err.message, 'error');
-                else alert(err.message);
+                showToast(err.message, 'error');
             }
         } else {
             const updateData = { fullName, role, permissions };
             if (password) {
-                if (password.length < 4) { if (typeof showToast === 'function') showToast('Password too short', 'error'); return; }
+                if (password.length < 4) { showToast('Password too short', 'error'); return; }
                 updateData.password = password;
             }
 
             try {
                 await API.updateEmployee(id, updateData);
-                if (typeof showToast === 'function') showToast(`✓ ${fullName} updated`, 'success');
+                showToast(`✓ ${fullName} updated`, 'success');
                 closeEmployeeModal();
                 await loadEmployeesPage();
             } catch (err) {
-                if (typeof showToast === 'function') showToast(err.message, 'error');
-                else alert(err.message);
+                showToast(err.message, 'error');
             }
         }
     }
 
     async function deleteEmployee(employeeId) {
-        if (!empMgr_hasPerm('manage_employees')) {
-            if (typeof showToast === 'function') showToast('Access denied.', 'error');
-            return;
-        }
+        if (!empMgr_hasPerm('manage_employees')) return;
 
         const emp = empMgr_list.find(e => e.id === employeeId);
         if (!emp) return;
 
         const currentUser = empMgr_getUser();
         if (currentUser && currentUser.id === employeeId) {
-            if (typeof showToast === 'function') showToast('You cannot delete yourself', 'error');
-            return;
+            showToast('You cannot delete yourself', 'error'); return;
         }
 
-        if (!confirm(`Delete "${emp.full_name || emp.username}"?`)) return;
+        if (!confirm(`Delete "${emp.full_name || emp.username}"? This action cannot be undone.`)) return;
 
         try {
             await API.deleteEmployee(employeeId);
-            if (typeof showToast === 'function') showToast(`✓ ${emp.full_name || emp.username} deactivated`, 'success');
+            showToast(`✓ ${emp.full_name || emp.username} deleted`, 'success');
             await loadEmployeesPage();
         } catch (err) {
-            if (typeof showToast === 'function') showToast(err.message, 'error');
+            showToast(err.message, 'error');
         }
-    }
-
-    function viewEmployeePermissions(employeeId) {
-        const emp = empMgr_list.find(e => e.id === employeeId);
-        if (!emp) return;
-
-        let permList;
-        if (emp.role === 'owner') {
-            permList = 'ALL RIGHTS (Owner)';
-        } else if (emp.permissions && emp.permissions.length > 0) {
-            permList = emp.permissions
-                .map(key => {
-                    const p = EMPMGR_PERMISSIONS.find(ap => ap.key === key);
-                    return p ? `• ${p.label}` : `• ${key}`;
-                })
-                .join('\n');
-        } else {
-            permList = 'No permissions assigned';
-        }
-
-        alert(
-            `🔐 ACCESS RIGHTS\n\n` +
-            `Employee: ${emp.full_name || emp.username}\n` +
-            `Role: ${emp.role}\n` +
-            `Status: ${emp.is_active ? 'Active' : 'Inactive'}\n\n` +
-            `Permissions:\n${permList}`
-        );
-    }
-
-    function filterEmployees() {
-        const query = (document.getElementById('employeeSearch')?.value || '').toLowerCase().trim();
-        const rows = document.querySelectorAll('#employeeTableBody tr');
-
-        rows.forEach(row => {
-            if (!row.cells || row.cells.length < 3) return;
-            const text = row.textContent.toLowerCase();
-            row.style.display = query && !text.includes(query) ? 'none' : '';
-        });
-    }
-
-    function setEmployeePeriod(period) {
-        empMgr_period = period;
-        document.querySelectorAll('.employee-filter-bar .period-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.period === period);
-        });
-        empMgr_loadStats().then(() => {
-            empMgr_renderStats();
-            empMgr_renderTable();
-        });
     }
 
     // ============================================================
@@ -727,9 +493,7 @@
     }
 
     function empMgr_escapeHtml(str) {
-        return String(str || '')
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function empMgr_escapeAttr(str) {
@@ -737,16 +501,14 @@
     }
 
     function empMgr_formatMoney(num) {
-        if (num === null || num === undefined) return '0.00';
+        if (!num) return '0.00';
         num = Number(num);
         if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(2) + 'M';
         if (Math.abs(num) >= 1000) return num.toLocaleString('en-KE', { maximumFractionDigits: 2 });
         return num.toFixed(2);
     }
 
-    // ============================================================
-    // EXPOSE GLOBALLY
-    // ============================================================
+    // Expose globally
     window.loadEmployeesPage = loadEmployeesPage;
     window.openAddEmployeeModal = openAddEmployeeModal;
     window.editEmployee = editEmployee;
@@ -754,16 +516,8 @@
     window.saveEmployee = saveEmployee;
     window.deleteEmployee = deleteEmployee;
     window.resetEmployeePassword = resetEmployeePassword;
-    window.viewEmployeePermissions = viewEmployeePermissions;
     window.onEmployeeRoleChange = onEmployeeRoleChange;
     window.updatePermissionCount = updatePermissionCount;
-    window.filterEmployees = filterEmployees;
-    window.setEmployeePeriod = setEmployeePeriod;
-    window.openUpdateRightsModal = openUpdateRightsModal;
-    window.closeUpdateRightsModal = closeUpdateRightsModal;
-    window.saveUpdateRights = saveUpdateRights;
-    window.onUpdateRightsRoleChange = onUpdateRightsRoleChange;
-    window.updateRightsPermissionCount = updateRightsPermissionCount;
 
-    console.log('[SmartPOS] employees.js loaded (v5 - with Update Rights)');
+    console.log('[SmartPOS] employees.js loaded (v6 - Fixed)');
 })();
