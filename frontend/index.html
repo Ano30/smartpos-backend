@@ -1524,6 +1524,77 @@
         showToast(`Set to ${label} (${units} units)`, 'info');
     }
     window.setPackPreset = setPackPreset;
+
+    // ============================================================
+    // 🎯 SAVE ITEM FUNCTION (THE MISSING PIECE)
+    // ============================================================
+    async function saveItem() {
+        const type = document.getElementById('itemType').value;
+        let stock = 0;
+        let unitsPerPack = 1;
+
+        // 1. Calculate Stock based on Item Type
+        if (type === 'bulk') {
+            unitsPerPack = parseInt(document.getElementById('itemUnitsPerPack').value) || 12;
+            const packCount = parseInt(document.getElementById('packCount').value) || 0;
+            
+            if (packCount > 0) {
+                stock = packCount * unitsPerPack; // e.g., 30 * 12 = 360
+            } else {
+                stock = parseFloat(document.getElementById('itemStock').value) || 0;
+            }
+        } else if (type === 'weight') {
+            stock = parseFloat(document.getElementById('itemStockWeight').value) || 0;
+        } else {
+            stock = parseFloat(document.getElementById('itemStock').value) || 0;
+        }
+
+        // 2. Gather all form data
+        const payload = {
+            name: document.getElementById('itemName').value.trim(),
+            category: document.getElementById('itemCategory').value.trim(),
+            type: type,
+            barcode: document.getElementById('itemBarcode').value.trim(),
+            costPrice: parseFloat(document.getElementById('itemCostPrice').value) || 0,
+            sellingPrice: parseFloat(document.getElementById('itemSellingPrice').value) || 0,
+            sellingPricePerSingle: parseFloat(document.getElementById('itemSellingPricePerSingle').value) || 0,
+            unitsPerPack: unitsPerPack,
+            stock: stock,
+            reorderLevel: parseFloat(document.getElementById('itemReorder').value) || 5,
+            unitOfMeasure: document.getElementById('itemUnitOfMeasure') ? document.getElementById('itemUnitOfMeasure').value : 'pcs'
+        };
+
+        if (!payload.name) { 
+            showToast('Item Name is required', 'error'); 
+            return; 
+        }
+
+        // 3. Send to the backend API
+        try {
+            showToast('Saving item...', 'info'); 
+            
+            await API.createProduct(payload);
+            
+            showToast('Item added successfully!', 'success');
+            
+            // Clear the form
+            document.getElementById('itemName').value = '';
+            document.getElementById('itemBarcode').value = '';
+            document.getElementById('itemCostPrice').value = '';
+            document.getElementById('itemSellingPrice').value = '';
+            document.getElementById('itemStock').value = '';
+            document.getElementById('packCount').value = '';
+            document.getElementById('totalPieces').value = '';
+            
+            // Refresh the products grid so you see it instantly
+            if (typeof loadProducts === 'function') {
+                loadProducts(); 
+            }
+        } catch (err) {
+            showToast(err.message || 'Failed to save item', 'error');
+        }
+    }
+    window.saveItem = saveItem;
     </script>
 </body>
 </html>
