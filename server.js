@@ -113,6 +113,11 @@ app.use(express.static(FRONTEND_PATH));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 app.get('/api/companies', (req, res) => db.all("SELECT id, name FROM companies ORDER BY name ASC", [], (err, rows) => res.json(rows || [])));
 
+// Server Info (Fixes console 404)
+app.get('/api/server-info', (req, res) => {
+    res.json({ status: 'online', platform: 'render', version: '1.0.0' });
+});
+
 app.post('/api/auth/login', (req, res) => {
     const { company_id, username, password, role } = req.body;
     db.get(`SELECT u.*, c.name as company_name FROM users u JOIN companies c ON c.id = u.company_id WHERE u.company_id = ? AND u.username = ?`, [company_id, username], async (err, user) => {
@@ -153,7 +158,7 @@ app.delete('/api/products/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 SALES (UPDATED TO DEDUCT TOTAL PIECES)
+// 🎯 SALES & EMPLOYEES & ANALYTICS
 app.post('/api/sales', authenticate, (req, res) => {
     const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
@@ -168,7 +173,6 @@ app.post('/api/sales', authenticate, (req, res) => {
             if (items.length === 0) return res.json({ success: true, saleId, receiptNo });
             
             items.forEach(item => {
-                // Use totalPiecesDeducted (calculated in script.js) OR fallback to quantity
                 const qtyToDeduct = item.totalPiecesDeducted || item.quantity;
 
                 db.run(`INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?)`, 
@@ -182,6 +186,44 @@ app.post('/api/sales', authenticate, (req, res) => {
         });
 });
 
+app.get('/api/sales', authenticate, (req, res) => {
+    db.all("SELECT * FROM sales WHERE company_id = ? ORDER BY id DESC LIMIT 100", [req.user.companyId], (err, rows) => {
+        res.json(rows || []);
+    });
+});
+
+app.get('/api/employees', authenticate, (req, res) => {
+    db.all("SELECT id, full_name, username, role, permissions, is_active FROM users WHERE company_id = ? ORDER BY full_name ASC", [req.user.companyId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const formatted = (rows || []).map(r => ({
+            id: r.id, fullName: r.full_name, username: r.username, role: r.role, permissions: r.permissions || '[]', isActive: r.is_active
+        }));
+        res.json(formatted);
+    });
+});
+
+app.get('/api/employees/stats', authenticate, (req, res) => {
+    db.get("SELECT COUNT(*) as total FROM users WHERE company_id = ?", [req.user.companyId], (err, row) => {
+        res.json({ totalEmployees: row ? row.total : 0, activeEmployees: row ? row.total : 0 });
+    });
+});
+
+app.get('/api/analytics/kpi', authenticate, (req, res) => {
+    const { period } = req.query;
+    db.get(`SELECT COUNT(id) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
+        db.get(`SELECT SUM(stock * cost_price) as stockValue FROM products WHERE company_id = ? AND is_active = 1`, [req.user.companyId], (err2, stockRow) => {
+            res.json({
+                totalRevenue: salesRow?.revenue || 0,
+                totalTransactions: salesRow?.transactions || 0,
+                stockValue: stockRow?.stockValue || 0,
+                itemsSold: 0,
+                avgSale: salesRow?.transactions > 0 ? (salesRow.revenue / salesRow.transactions) : 0
+            });
+        });
+    });
+});
+
+// 🎯 MPESA & RETURNS
 app.post('/api/mpesa/stkpush', authenticate, (req, res) => {
     const { phone, amount } = req.body;
     const checkoutId = 'SIM_' + Date.now();
