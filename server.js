@@ -126,6 +126,7 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
+// 🎯 PRODUCTS (GET, POST, PUT, DELETE)
 app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1 ORDER BY name ASC", [req.user.companyId], (err, rows) => res.json(rows || [])));
 
 app.post('/api/products', authenticate, (req, res) => {
@@ -150,7 +151,6 @@ app.put('/api/products/:id', authenticate, (req, res) => {
         });
 });
 
-// 🎯 DELETE PRODUCT (SOFT DELETE)
 app.delete('/api/products/:id', authenticate, (req, res) => {
     db.run("UPDATE products SET is_active = 0 WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], function (err) { 
         if (err) return res.status(500).json({ error: err.message }); 
@@ -158,7 +158,7 @@ app.delete('/api/products/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 SALES 
+// 🎯 SALES & EMPLOYEES & ANALYTICS
 app.post('/api/sales', authenticate, (req, res) => {
     const { items, subtotal, discountAmount, total, paymentMethod, paymentCash, paymentMpesa, customerPhone, mpesaReceipt } = req.body;
     const receiptNo = 'R' + Date.now();
@@ -192,6 +192,7 @@ app.get('/api/sales', authenticate, (req, res) => {
     });
 });
 
+// 🎯 EMPLOYEES (GET, POST, PUT, DELETE, STATS)
 app.get('/api/employees', authenticate, (req, res) => {
     db.all("SELECT id, full_name, username, role, permissions, is_active FROM users WHERE company_id = ? ORDER BY full_name ASC", [req.user.companyId], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -208,6 +209,59 @@ app.get('/api/employees/stats', authenticate, (req, res) => {
     });
 });
 
+app.post('/api/employees', authenticate, async (req, res) => {
+    const { fullName, username, password, role, permissions } = req.body;
+    if (!fullName || !username || !password) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+        const hash = await bcrypt.hash(password, 10);
+        db.run(`INSERT INTO users (company_id, username, password_hash, full_name, role, permissions) VALUES (?, ?, ?, ?, ?, ?)`,
+            [req.user.companyId, username, hash, fullName, role || 'employee', JSON.stringify(permissions || [])],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, id: this.lastID });
+            });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/employees/:id', authenticate, async (req, res) => {
+    const { fullName, username, password, role, permissions } = req.body;
+    const employeeId = req.params.id;
+
+    if (password) {
+        try {
+            const hash = await bcrypt.hash(password, 10);
+            db.run(`UPDATE users SET full_name=?, username=?, password_hash=?, role=?, permissions=? WHERE id=? AND company_id=?`,
+                [fullName, username, hash, role, JSON.stringify(permissions || []), employeeId, req.user.companyId],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true });
+                });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    } else {
+        db.run(`UPDATE users SET full_name=?, username=?, role=?, permissions=? WHERE id=? AND company_id=?`,
+            [fullName, username, role, JSON.stringify(permissions || []), employeeId, req.user.companyId],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            });
+    }
+});
+
+app.delete('/api/employees/:id', authenticate, (req, res) => {
+    db.run("UPDATE users SET is_active = 0 WHERE id = ? AND company_id = ?", [req.params.id, req.user.companyId], function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// 🎯 ANALYTICS
 app.get('/api/analytics/kpi', authenticate, (req, res) => {
     const { period } = req.query;
     db.get(`SELECT COUNT(id) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
