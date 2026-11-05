@@ -69,6 +69,7 @@ const API = {
     createSale: (data) => apiCall('/sales', { method: 'POST', body: JSON.stringify(data) }),
     initiateMpesa: (phone, amount) => apiCall('/mpesa/stkpush', { method: 'POST', body: JSON.stringify({ phone, amount }) }),
     checkMpesaStatus: (id) => apiCall(`/mpesa/status/${id}`),
+    getSales: () => apiCall('/sales'),
     
     // 🎯 RETURNS
     searchSaleForReturn: (params) => apiCall('/returns/search-sale?' + new URLSearchParams(params)),
@@ -76,14 +77,13 @@ const API = {
     getReturns: (params = {}) => { const query = new URLSearchParams(params).toString(); return apiCall('/returns' + (query ? '?' + query : '')); },
     getReturn: (id) => apiCall('/returns/' + id),
     
-    // OTHER
-    getKPIs: (period) => apiCall(`/analytics/kpi?period=${period}`),
+    // 🎯 EMPLOYEES & ANALYTICS
+    getKPIs: (period) => apiCall(`/analytics/kpi?period=${period || 'today'}`),
     getEmployees: () => apiCall('/employees'),
     getEmployeeStats: () => apiCall('/employees/stats'),
     createEmployee: (data) => apiCall('/employees', { method: 'POST', body: JSON.stringify(data) }),
     updateEmployee: (id, data) => apiCall(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    deleteEmployee: (id) => apiCall(`/employees/${id}`, { method: 'DELETE' }),
-    getSales: () => apiCall('/sales')
+    deleteEmployee: (id) => apiCall(`/employees/${id}`, { method: 'DELETE' })
 };
 
 window.API = API;
