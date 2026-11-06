@@ -117,6 +117,15 @@ app.get('/api/server-info', (req, res) => {
     res.json({ status: 'online', platform: 'render', version: '1.0.0' });
 });
 
+app.get('/api/permissions-matrix', authenticate, (req, res) => {
+    // Return the default permissions for each role so the frontend can use it
+    res.json({
+        employee: ['make_sale', 'view_inventory', 'process_returns'],
+        admin: ['make_sale', 'view_inventory', 'process_returns', 'restock', 'add_product', 'edit_product', 'delete_product', 'print_labels', 'view_reports', 'view_analytics'],
+        owner: ['*']
+    });
+});
+
 app.post('/api/auth/login', (req, res) => {
     const { company_id, username, password, role } = req.body;
     db.get(`SELECT u.*, c.name as company_name FROM users u JOIN companies c ON c.id = u.company_id WHERE u.company_id = ? AND u.username = ?`, [company_id, username], async (err, user) => {
@@ -126,7 +135,7 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
-// 🎯 PRODUCTS (GET, POST, PUT, DELETE)
+// 🎯 PRODUCTS
 app.get('/api/products', authenticate, (req, res) => db.all("SELECT * FROM products WHERE company_id = ? AND is_active = 1 ORDER BY name ASC", [req.user.companyId], (err, rows) => res.json(rows || [])));
 
 app.post('/api/products', authenticate, (req, res) => {
@@ -192,7 +201,7 @@ app.get('/api/sales', authenticate, (req, res) => {
     });
 });
 
-// 🎯 EMPLOYEES (GET, POST, PUT, DELETE, STATS, RESET PASSWORD)
+// 🎯 EMPLOYEES
 app.get('/api/employees', authenticate, (req, res) => {
     db.all("SELECT id, full_name, username, role, permissions, is_active FROM users WHERE company_id = ? ORDER BY full_name ASC", [req.user.companyId], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -269,7 +278,6 @@ app.delete('/api/employees/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 RESET EMPLOYEE PASSWORD
 app.put('/api/employees/:id/reset-password', authenticate, async (req, res) => {
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 4) {
@@ -290,7 +298,7 @@ app.put('/api/employees/:id/reset-password', authenticate, async (req, res) => {
     }
 });
 
-// 🎯 ANALYTICS (KPIs & Charts)
+// 🎯 ANALYTICS
 app.get('/api/analytics/kpi', authenticate, (req, res) => {
     const { period } = req.query;
     db.get(`SELECT COUNT(id) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
@@ -320,7 +328,7 @@ app.get('/api/analytics/top-products', authenticate, (req, res) => {
     });
 });
 
-// 🎯 REPORTS (Advanced filtering)
+// 🎯 REPORTS
 app.get('/api/reports/summary', authenticate, (req, res) => {
     const { from, to } = req.query;
     let query = "SELECT * FROM sales WHERE company_id = ?";
