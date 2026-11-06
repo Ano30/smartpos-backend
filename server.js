@@ -192,7 +192,7 @@ app.get('/api/sales', authenticate, (req, res) => {
     });
 });
 
-// 🎯 EMPLOYEES (GET, POST, PUT, DELETE, STATS)
+// 🎯 EMPLOYEES (GET, POST, PUT, DELETE, STATS, RESET PASSWORD)
 app.get('/api/employees', authenticate, (req, res) => {
     db.all("SELECT id, full_name, username, role, permissions, is_active FROM users WHERE company_id = ? ORDER BY full_name ASC", [req.user.companyId], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -216,7 +216,6 @@ app.post('/api/employees', authenticate, async (req, res) => {
     }
 
     try {
-        // Check for duplicate username first
         db.get("SELECT id FROM users WHERE company_id = ? AND username = ?", [req.user.companyId, username], async (err, existingUser) => {
             if (err) return res.status(500).json({ error: err.message });
             
@@ -270,7 +269,28 @@ app.delete('/api/employees/:id', authenticate, (req, res) => {
     });
 });
 
-// 🎯 ANALYTICS
+// 🎯 RESET EMPLOYEE PASSWORD
+app.put('/api/employees/:id/reset-password', authenticate, async (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 4) {
+        return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    }
+
+    try {
+        const hash = await bcrypt.hash(newPassword, 10);
+        db.run(`UPDATE users SET password_hash = ? WHERE id = ? AND company_id = ?`, 
+            [hash, req.params.id, req.user.companyId], 
+            function(err) {
+                if (err) return res.status(500).json({ error: err.message });
+                if (this.changes === 0) return res.status(404).json({ error: 'Employee not found' });
+                res.json({ success: true, message: 'Password reset successfully' });
+            });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 🎯 ANALYTICS (KPIs & Charts)
 app.get('/api/analytics/kpi', authenticate, (req, res) => {
     const { period } = req.query;
     db.get(`SELECT COUNT(id) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
@@ -283,6 +303,37 @@ app.get('/api/analytics/kpi', authenticate, (req, res) => {
                 avgSale: salesRow?.transactions > 0 ? (salesRow.revenue / salesRow.transactions) : 0
             });
         });
+    });
+});
+
+app.get('/api/analytics/trend', authenticate, (req, res) => {
+    db.all(`SELECT date(created_at) as date, SUM(total) as revenue FROM sales WHERE company_id = ? GROUP BY date(created_at) ORDER BY date(created_at) ASC LIMIT 7`, [req.user.companyId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
+});
+
+app.get('/api/analytics/top-products', authenticate, (req, res) => {
+    db.all(`SELECT product_name as name, SUM(quantity) as total_qty FROM sale_items JOIN sales ON sale_items.sale_id = sales.id WHERE sales.company_id = ? GROUP BY product_name ORDER BY total_qty DESC LIMIT 5`, [req.user.companyId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
+});
+
+// 🎯 REPORTS (Advanced filtering)
+app.get('/api/reports/summary', authenticate, (req, res) => {
+    const { from, to } = req.query;
+    let query = "SELECT * FROM sales WHERE company_id = ?";
+    const params = [req.user.companyId];
+    
+    if (from && to) {
+        query += " AND created_at >= ? AND created_at <= ?";
+        params.push(from, to + ' 23:59:59');
+    }
+    
+    db.all(query + " ORDER BY created_at DESC", params, (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
     });
 });
 
