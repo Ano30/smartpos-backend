@@ -1,5 +1,5 @@
 /* ============================================
-   SMARTPOS - API Client
+   SMARTPOS - API Client (Updated with Backups)
    ============================================ */
 
 const CLOUD_URL = 'https://smartpos-backend-gtwl.onrender.com';
@@ -97,7 +97,13 @@ const API = {
 
     // 🎯 BACKUPS (Mock functions for frontend UI)
     syncCloud: () => Promise.resolve({ success: true, message: 'Synced to cloud' }),
-    createBackup: () => Promise.resolve({ success: true, message: 'Backup created' })
+    createBackup: () => Promise.resolve({ success: true, message: 'Backup created' }),
+    backupStats: () => Promise.resolve({ autoCount: 0, manualCount: 0, cloudCount: 0, totalCount: 0 }),
+    listBackups: () => Promise.resolve([]),
+    downloadBackup: () => Promise.resolve(true),
+    restoreBackup: () => Promise.resolve({ success: true }),
+    cleanBackups: () => Promise.resolve({ success: true }),
+    deleteBackup: () => Promise.resolve({ success: true })
 };
 
 window.API = API;
