@@ -1,18 +1,13 @@
 /* ============================================================
-   SMARTPOS - Reports & Analytics Logic (reports.js)
+   SMARTPOS - Reports Logic (reports.js)
    ============================================================ */
-
-let currentReportData = [];
 
 function toggleReportFilters() {
     const type = document.getElementById('reportFilterType').value;
-    
-    // Hide all
     document.getElementById('dayFilter').style.display = 'none';
     document.getElementById('monthFilter').style.display = 'none';
     document.getElementById('yearFilter').style.display = 'none';
 
-    // Show selected
     if (type === 'day') document.getElementById('dayFilter').style.display = 'block';
     if (type === 'month') document.getElementById('monthFilter').style.display = 'block';
     if (type === 'year') document.getElementById('yearFilter').style.display = 'block';
@@ -23,15 +18,12 @@ async function generateReport() {
     
     try {
         showToast('Generating report...', 'info');
-        
-        // Fetch all sales from the backend
         const sales = await API.getSales();
         
         let filteredSales = sales || [];
         let totalRevenue = 0;
         let totalTransactions = filteredSales.length;
 
-        // Filter based on the selected type (simple date filtering)
         const today = new Date().toISOString().split('T')[0];
         
         if (type === 'today') {
@@ -41,10 +33,8 @@ async function generateReport() {
             if (date) filteredSales = filteredSales.filter(s => s.created_at && s.created_at.startsWith(date));
         }
 
-        // Calculate totals
         filteredSales.forEach(s => totalRevenue += parseFloat(s.total || 0));
 
-        // Update Summary Cards
         const summaryDiv = document.getElementById('reportSummary');
         if (summaryDiv) {
             summaryDiv.innerHTML = `
@@ -59,7 +49,6 @@ async function generateReport() {
             `;
         }
 
-        // Render History Table
         const historyDiv = document.getElementById('salesHistoryList');
         if (historyDiv) {
             if (filteredSales.length === 0) {
@@ -89,6 +78,5 @@ async function generateReport() {
     }
 }
 
-// Make functions globally available
 window.toggleReportFilters = toggleReportFilters;
 window.generateReport = generateReport;
