@@ -55,11 +55,14 @@ async function apiCall(endpoint, options = {}, retries = 2) {
 }
 
 const API = {
+    // 🎯 AUTH & COMPANIES
     register: (data) => apiCall('/companies', { method: 'POST', body: JSON.stringify(data) }),
     login: (data) => apiCall('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
     verify: () => apiCall('/auth/verify'),
     getCompanies: () => apiCall('/companies'),
     getServerInfo: () => apiCall('/server-info'),
+    
+    // 🎯 PRODUCTS
     getProducts: () => apiCall('/products'),
     createProduct: (data) => apiCall('/products', { method: 'POST', body: JSON.stringify(data) }),
     updateProduct: (id, data) => apiCall(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -67,9 +70,9 @@ const API = {
     
     // 🎯 SALES & MPESA
     createSale: (data) => apiCall('/sales', { method: 'POST', body: JSON.stringify(data) }),
+    getSales: () => apiCall('/sales'),
     initiateMpesa: (phone, amount) => apiCall('/mpesa/stkpush', { method: 'POST', body: JSON.stringify({ phone, amount }) }),
     checkMpesaStatus: (id) => apiCall(`/mpesa/status/${id}`),
-    getSales: () => apiCall('/sales'),
     
     // 🎯 RETURNS
     searchSaleForReturn: (params) => apiCall('/returns/search-sale?' + new URLSearchParams(params)),
@@ -77,13 +80,24 @@ const API = {
     getReturns: (params = {}) => { const query = new URLSearchParams(params).toString(); return apiCall('/returns' + (query ? '?' + query : '')); },
     getReturn: (id) => apiCall('/returns/' + id),
     
-    // 🎯 EMPLOYEES & ANALYTICS
-    getKPIs: (period) => apiCall(`/analytics/kpi?period=${period || 'today'}`),
+    // 🎯 EMPLOYEES
     getEmployees: () => apiCall('/employees'),
     getEmployeeStats: () => apiCall('/employees/stats'),
     createEmployee: (data) => apiCall('/employees', { method: 'POST', body: JSON.stringify(data) }),
     updateEmployee: (id, data) => apiCall(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    deleteEmployee: (id) => apiCall(`/employees/${id}`, { method: 'DELETE' })
+    deleteEmployee: (id) => apiCall(`/employees/${id}`, { method: 'DELETE' }),
+    resetEmployeePassword: (id, newPassword) => apiCall(`/employees/${id}/reset-password`, { method: 'PUT', body: JSON.stringify({ newPassword }) }),
+    getPermissionsMatrix: () => apiCall('/permissions-matrix'),
+    
+    // 🎯 ANALYTICS & REPORTS
+    getKPIs: (period) => apiCall(`/analytics/kpi?period=${period || 'today'}`),
+    getSalesTrend: () => apiCall('/analytics/trend'),
+    getTopProducts: () => apiCall('/analytics/top-products'),
+    getReportSummary: (from, to) => apiCall(`/reports/summary?from=${from}&to=${to}`),
+
+    // 🎯 BACKUPS (Mock functions for frontend UI)
+    syncCloud: () => Promise.resolve({ success: true, message: 'Synced to cloud' }),
+    createBackup: () => Promise.resolve({ success: true, message: 'Backup created' })
 };
 
 window.API = API;
