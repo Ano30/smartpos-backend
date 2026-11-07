@@ -174,7 +174,7 @@ function showMainApp() {
 }
 
 // ============================================================
-// NAVIGATION
+// NAVIGATION (Auto-load pages)
 // ============================================================
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -186,11 +186,21 @@ function switchPage(pageId) {
     const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
     if (navItem) navItem.classList.add('active');
 
+    // 🎯 AUTO-LOAD LOGIC FOR SPECIFIC PAGES
+    if (pageId === 'employees' && typeof loadEmployeesPage === 'function') {
+        loadEmployeesPage();
+    }
     if (pageId === 'returns' && typeof initReturnsPage === 'function') {
         initReturnsPage();
     }
     if (pageId === 'inventory') {
         renderInventoryTable();
+    }
+    if (pageId === 'labels' && typeof initLabelsPage === 'function') {
+        initLabelsPage();
+    }
+    if (pageId === 'backup' && typeof loadBackups === 'function') {
+        loadBackups();
     }
 }
 
