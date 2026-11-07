@@ -18,6 +18,45 @@ document.addEventListener('DOMContentLoaded', () => {
             if (pageId) switchPage(pageId);
         });
     });
+
+    // 🎯 RESTOCK BARCODE SCANNER LISTENER
+    const restockBarcodeInput = document.getElementById('restockBarcodeInput');
+    if (restockBarcodeInput) {
+        restockBarcodeInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const barcode = this.value.trim();
+                if (!barcode) return;
+
+                // Find the product in the global 'products' array
+                const product = products.find(p => p.barcode === barcode);
+
+                if (product) {
+                    // Populate the Restock Form
+                    document.getElementById('restockProductName').textContent = product.name;
+                    document.getElementById('restockProductMeta').innerHTML = `
+                        <span>Current Stock: <strong>${product.stock}</strong> ${product.unit_of_measure || 'pcs'}</span> | 
+                        <span>Cost: KES ${product.cost_price}</span> | 
+                        <span>Selling: KES ${product.selling_price}</span>
+                    `;
+                    
+                    // Set the global variable for saving
+                    window.currentRestockProduct = product;
+
+                    // Show the form card
+                    document.getElementById('restockFormCard').style.display = 'block';
+                    
+                    // Clear the input
+                    this.value = '';
+                    
+                    showToast(`Product found: ${product.name}`, 'success');
+                } else {
+                    showToast(`No product found with barcode: ${barcode}`, 'error');
+                    this.value = '';
+                }
+            }
+        });
+    }
 });
 
 async function initApp() {
@@ -665,3 +704,63 @@ window.closeReceipt = closeReceipt;
 window.printReceipt = printReceipt;
 window.deleteItem = deleteItem;
 window.renderInventoryTable = renderInventoryTable;
+
+// 🎯 RESTOCK SAVE LOGIC
+async function saveRestock() {
+    if (!window.currentRestockProduct) {
+        showToast('No product selected', 'error'); return;
+    }
+
+    const inputQty = parseFloat(document.getElementById('restockQuantity').value);
+    if (isNaN(inputQty) || inputQty <= 0) {
+        showToast('Please enter a valid quantity', 'error'); return;
+    }
+
+    const unitType = document.getElementById('restockUnitType').value;
+    let piecesToAdd = inputQty;
+    
+    if (unitType === 'packs' && window.currentRestockProduct.units_per_pack > 1) {
+        piecesToAdd = inputQty * window.currentRestockProduct.units_per_pack;
+        showToast(`Adding ${piecesToAdd} total pieces (${inputQty} packs)`, 'info');
+    }
+
+    const newCost = parseFloat(document.getElementById('restockCostPrice').value);
+    const newSelling = parseFloat(document.getElementById('restockSellingPrice').value);
+
+    try {
+        const product = window.currentRestockProduct;
+        
+        const payload = {
+            name: product.name,
+            category: product.category,
+            type: product.type,
+            barcode: product.barcode,
+            costPrice: !isNaN(newCost) ? newCost : product.cost_price,
+            sellingPrice: !isNaN(newSelling) ? newSelling : product.selling_price,
+            stock: product.stock + piecesToAdd,
+            reorderLevel: product.reorder_level,
+            unitsPerPack: product.units_per_pack,
+            sellingPricePerSingle: product.selling_price_per_single,
+            unitOfMeasure: product.unit_of_measure
+        };
+
+        await API.updateProduct(product.id, payload);
+        
+        showToast('Restock saved successfully!', 'success');
+        clearRestockForm();
+        if (typeof loadProducts === 'function') loadProducts();
+
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+window.saveRestock = saveRestock;
+
+function clearRestockForm() {
+    document.getElementById('restockFormCard').style.display = 'none';
+    document.getElementById('restockQuantity').value = '';
+    document.getElementById('restockCostPrice').value = '';
+    document.getElementById('restockSellingPrice').value = '';
+    window.currentRestockProduct = null;
+}
+window.clearRestockForm = clearRestockForm;
