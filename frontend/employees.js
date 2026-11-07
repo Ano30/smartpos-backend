@@ -1,5 +1,5 @@
 /* ============================================================
-   SMARTPOS - Employees Management (v6 - Fixed & Improved)
+   SMARTPOS - Employees Management (v7 - Fixed Username Error)
    ============================================================ */
 
 (function() {
@@ -85,13 +85,10 @@
 
     async function empMgr_loadStats() {
         try {
-            // API returns an object: { totalEmployees, activeEmployees } 
-            // We no longer expect an array, so we prevent the .reduce crash
             const stats = await API.getEmployeeStats(empMgr_period);
             if (Array.isArray(stats)) {
                 empMgr_stats = stats;
             } else {
-                // Create a dummy array so the rest of the code doesn't break
                 empMgr_stats = []; 
             }
         } catch (err) {
@@ -116,7 +113,6 @@
         const totalEmployees = empMgr_list.filter(e => e.role !== 'owner').length;
         const activeEmployees = empMgr_list.filter(e => e.is_active && e.role !== 'owner').length;
         
-        // Safe calculation to prevent crashes
         const totalSales = Array.isArray(empMgr_stats) ? empMgr_stats.reduce((sum, s) => sum + (s.sales || 0), 0) : 0;
         const totalRevenue = Array.isArray(empMgr_stats) ? empMgr_stats.reduce((sum, s) => sum + (s.revenue || 0), 0) : 0;
 
@@ -177,7 +173,6 @@
             const isSelf = currentUser && currentUser.id === emp.id;
             const isOwnerRow = emp.role === 'owner';
             
-            // Only Owner can manage other accounts
             const canManage = currentUser && (currentUser.role === 'owner' || currentUser.role === 'admin');
 
             return `
@@ -291,6 +286,7 @@
         document.getElementById('employeeId').value = '';
         document.getElementById('employeeFullName').value = '';
         document.getElementById('employeeUsername').value = '';
+        // Username is always enabled for adding
         document.getElementById('employeeUsername').disabled = false;
         document.getElementById('employeePassword').value = '';
         document.getElementById('employeePassword').placeholder = 'Enter password';
@@ -317,7 +313,10 @@
         document.getElementById('employeeId').value = emp.id;
         document.getElementById('employeeFullName').value = emp.full_name || '';
         document.getElementById('employeeUsername').value = emp.username;
-        document.getElementById('employeeUsername').disabled = true;
+        
+        // 🎯 FIX: Username must stay enabled so it sends to the server
+        document.getElementById('employeeUsername').disabled = false; 
+        
         document.getElementById('employeePassword').value = '';
         document.getElementById('employeePassword').placeholder = 'Leave empty to keep current password';
         document.getElementById('empPassHint').textContent = '(leave empty to keep current)';
@@ -434,7 +433,8 @@
                 showToast(err.message, 'error');
             }
         } else {
-            const updateData = { fullName, role, permissions };
+            // 🎯 FIX: Always include username in update
+            const updateData = { fullName, username, role, permissions };
             if (password) {
                 if (password.length < 4) { showToast('Password too short', 'error'); return; }
                 updateData.password = password;
@@ -519,5 +519,5 @@
     window.onEmployeeRoleChange = onEmployeeRoleChange;
     window.updatePermissionCount = updatePermissionCount;
 
-    console.log('[SmartPOS] employees.js loaded (v6 - Fixed)');
+    console.log('[SmartPOS] employees.js loaded (v7 - Fixed Username Error)');
 })();
