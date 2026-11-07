@@ -118,7 +118,6 @@ app.get('/api/server-info', (req, res) => {
 });
 
 app.get('/api/permissions-matrix', authenticate, (req, res) => {
-    // Return the default permissions for each role so the frontend can use it
     res.json({
         employee: ['make_sale', 'view_inventory', 'process_returns'],
         admin: ['make_sale', 'view_inventory', 'process_returns', 'restock', 'add_product', 'edit_product', 'delete_product', 'print_labels', 'view_reports', 'view_analytics'],
@@ -301,11 +300,22 @@ app.put('/api/employees/:id/reset-password', authenticate, async (req, res) => {
 // 🎯 ANALYTICS
 app.get('/api/analytics/kpi', authenticate, (req, res) => {
     const { period } = req.query;
-    db.get(`SELECT COUNT(id) as transactions, SUM(total) as revenue FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
+    
+    // Calculate Revenue, Transactions, Cash, and M-Pesa
+    db.get(`SELECT 
+            COUNT(id) as transactions, 
+            SUM(total) as revenue,
+            SUM(payment_cash) as cash_total,
+            SUM(payment_mpesa) as mpesa_total
+            FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
+        
+        // Calculate Stock Value
         db.get(`SELECT SUM(stock * cost_price) as stockValue FROM products WHERE company_id = ? AND is_active = 1`, [req.user.companyId], (err2, stockRow) => {
             res.json({
                 totalRevenue: salesRow?.revenue || 0,
                 totalTransactions: salesRow?.transactions || 0,
+                cashTotal: salesRow?.cash_total || 0,
+                mpesaTotal: salesRow?.mpesa_total || 0,
                 stockValue: stockRow?.stockValue || 0,
                 itemsSold: 0,
                 avgSale: salesRow?.transactions > 0 ? (salesRow.revenue / salesRow.transactions) : 0
