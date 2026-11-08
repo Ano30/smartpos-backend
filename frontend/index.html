@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
-    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#2c3e50">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -47,7 +46,6 @@
 </head>
 <body>
 
-    <!-- ============ MOBILE TOP BAR ============ -->
     <div class="mobile-top-bar" id="mobileTopBar" style="display:none;">
         <button class="mobile-hamburger" onclick="toggleMobileSidebar()">
             <i class="fas fa-bars"></i>
@@ -58,7 +56,6 @@
 
     <div class="mobile-sidebar-overlay" id="mobileSidebarOverlay" onclick="toggleMobileSidebar()"></div>
 
-    <!-- ============ AUTH SCREEN ============ -->
     <div id="authScreen" class="auth-screen">
         <div class="auth-container">
             <div class="auth-left">
@@ -233,7 +230,6 @@
         </div>
     </div>
 
-    <!-- ============ MAIN APP ============ -->
     <div id="mainApp" class="container" style="display: none;">
         <div class="sidebar">
             <div class="logo">
@@ -272,7 +268,6 @@
 
         <div class="main-content">
 
-            <!-- ===== SALES PAGE ===== -->
             <div id="page-sales" class="page active">
                 <header class="header">
                     <div class="header-left">
@@ -388,7 +383,6 @@
                 </div>
             </div>
 
-            <!-- ===== RESTOCK PAGE ===== -->
             <div id="page-restock" class="page">
                 <header class="header">
                     <div class="header-left">
@@ -446,7 +440,6 @@
                 </div>
             </div>
 
-            <!-- ===== INVENTORY PAGE ===== -->
             <div id="page-inventory" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-boxes"></i> Inventory</h1></div>
@@ -480,7 +473,6 @@
                 </div>
             </div>
 
-            <!-- ===== ADD ITEM PAGE ===== -->
             <div id="page-addItem" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-plus-square"></i> Add New Item</h1></div>
@@ -630,7 +622,6 @@
                 </div>
             </div>
 
-            <!-- ===== IMPORT PAGE ===== -->
             <div id="page-import" class="page">
                 <header class="header">
                     <div class="header-left">
@@ -724,7 +715,6 @@
                 </div>
             </div>
 
-            <!-- ===== RETURNS PAGE ===== -->
             <div id="page-returns" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-undo"></i> Returns & Refunds</h1></div>
@@ -816,7 +806,6 @@
                 </div>
             </div>
 
-            <!-- ===== LABELS PAGE ===== -->
             <div id="page-labels" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-tags"></i> Barcode Label Generator</h1></div>
@@ -864,7 +853,6 @@
                 </div>
             </div>
 
-            <!-- ===== EMPLOYEES PAGE ===== -->
             <div id="page-employees" class="page">
                 <header class="header">
                     <div class="header-left">
@@ -908,7 +896,6 @@
                 </div>
             </div>
 
-            <!-- ===== REPORTS PAGE ===== -->
             <div id="page-reports" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-chart-line"></i> Sales Reports</h1></div>
@@ -957,7 +944,6 @@
                 </div>
             </div>
 
-            <!-- ===== ANALYTICS PAGE ===== -->
             <div id="page-analytics" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-chart-pie"></i> Analytics</h1></div>
@@ -973,7 +959,6 @@
                 </header>
                 <div class="analytics-container">
                     <div class="kpi-grid">
-                        <!-- Existing Cards -->
                         <div class="kpi-card">
                             <div class="kpi-header"><span class="kpi-label">Total Revenue</span><i class="fas fa-money-bill-wave kpi-icon" style="color:#27ae60;"></i></div>
                             <div class="kpi-value" id="kpiRevenue">KES 0</div>
@@ -995,7 +980,6 @@
                             <div class="kpi-sub" id="kpiStockItems">0 items</div>
                         </div>
 
-                        <!-- 🎯 NEW CARDS START HERE -->
                         <div class="kpi-card" style="border-left: 4px solid #27ae60;">
                             <div class="kpi-header"><span class="kpi-label">Cash Collected</span><i class="fas fa-money-bill kpi-icon" style="color:#27ae60;"></i></div>
                             <div class="kpi-value" id="kpiCashTotal">KES 0</div>
@@ -1006,7 +990,7 @@
                             <div class="kpi-value" id="kpiMpesaTotal">KES 0</div>
                             <div class="kpi-sub">Total M-Pesa</div>
                         </div>
-                        <!-- 🎯 NEW CARDS END HERE -->
+
                     </div>
                     <div class="alerts-bar" id="alertsBar"></div>
                     <div class="charts-grid">
@@ -1053,7 +1037,6 @@
                 </div>
             </div>
 
-            <!-- ===== BACKUP PAGE ===== -->
             <div id="page-backup" class="page">
                 <header class="header">
                     <div class="header-left"><h1><i class="fas fa-database"></i> Backup Management</h1></div>
@@ -1096,7 +1079,6 @@
                 </div>
             </div>
 
-            <!-- ===== SETTINGS PAGE ===== -->
             <div id="page-settings" class="page">
                 <header class="header">
                     <div class="header-left">
@@ -1106,7 +1088,6 @@
                 </header>
 
                 <div class="settings-container">
-                    <!-- Contact Developer -->
                     <div class="settings-card">
                         <div class="settings-card-header">
                             <div class="settings-card-icon" style="background:linear-gradient(135deg,#3498db,#2980b9);">
@@ -1125,7 +1106,6 @@
                         </div>
                     </div>
 
-                    <!-- Sound & Alerts -->
                     <div class="settings-card">
                         <div class="settings-card-header">
                             <div class="settings-card-icon" style="background:linear-gradient(135deg,#e67e22,#d35400);">
@@ -1163,7 +1143,6 @@
                         </div>
                     </div>
 
-                    <!-- Keyboard Shortcuts -->
                     <div class="settings-card">
                         <div class="settings-card-header">
                             <div class="settings-card-icon" style="background:linear-gradient(135deg,#9b59b6,#8e44ad);">
@@ -1182,7 +1161,6 @@
                         </div>
                     </div>
 
-                    <!-- Terms & Conditions -->
                     <div class="settings-card">
                         <div class="settings-card-header">
                             <div class="settings-card-icon" style="background:linear-gradient(135deg,#16a085,#138d75);">
@@ -1203,7 +1181,6 @@
                         </div>
                     </div>
 
-                    <!-- Mobile Access -->
                     <div class="settings-card">
                         <div class="settings-card-header">
                             <div class="settings-card-icon" style="background:linear-gradient(135deg,#e91e63,#c2185b);">
@@ -1240,7 +1217,6 @@
                         </div>
                     </div>
 
-                    <!-- About -->
                     <div class="settings-card">
                         <div class="settings-card-header">
                             <div class="settings-card-icon" style="background:linear-gradient(135deg,#34495e,#2c3e50);">
@@ -1259,7 +1235,6 @@
         </div>
     </div>
 
-    <!-- ============ PRODUCT OPTIONS MODAL ============ -->
     <div id="productOptionsModal" class="modal">
         <div class="modal-content product-options-modal">
             <div class="modal-header">
@@ -1273,7 +1248,6 @@
         </div>
     </div>
 
-    <!-- ============ WEIGHT INPUT MODAL ============ -->
     <div id="weightInputModal" class="modal">
         <div class="modal-content weight-input-modal">
             <div class="modal-header">
@@ -1305,7 +1279,6 @@
         </div>
     </div>
 
-    <!-- ============ EMPLOYEE MODAL ============ -->
     <div id="employeeModal" class="modal">
         <div class="modal-content" style="max-width:700px;">
             <div class="modal-header">
@@ -1354,7 +1327,6 @@
         </div>
     </div>
 
-    <!-- ============ RECEIPT MODAL ============ -->
     <div id="receiptModal" class="modal">
         <div class="modal-content receipt-modal">
             <div class="receipt" id="receiptContent">
@@ -1376,7 +1348,6 @@
         </div>
     </div>
 
-    <!-- ============ KEYBOARD SHORTCUTS MODAL ============ -->
     <div id="shortcutsModal" class="modal">
         <div class="modal-content" style="max-width:720px;">
             <div class="modal-header">
@@ -1387,7 +1358,6 @@
         </div>
     </div>
 
-    <!-- ============ TERMS MODAL ============ -->
     <div id="termsModal" class="modal">
         <div class="modal-content" style="max-width:800px;">
             <div class="modal-header">
@@ -1402,23 +1372,22 @@
         </div>
     </div>
 
-    <!-- Toast -->
     <div id="toast" class="toast"></div>
 
-                <!-- Scripts -->
+    <!-- Scripts -->
     <script src="chart.umd.min.js"></script>
-    <script src="sounds.js?v=50" defer></script>
-    <script src="api.js?v=50" defer></script>
-    <script src="script.js?v=50" defer></script>
-    <script src="analytics.js?v=50" defer></script>
-    <script src="backup.js?v=50" defer></script>
-    <script src="employees.js?v=50" defer></script>
-    <script src="labels.js?v=50" defer></script>
-    <script src="import.js?v=50" defer></script>
-    <script src="returns.js?v=50" defer></script>
-    <script src="reports.js?v=50" defer></script>
-    <script src="settings.js?v=50" defer></script>
-    <!-- Inline Helpers -->
+    <script src="sounds.js?v=51" defer></script>
+    <script src="api.js?v=51" defer></script>
+    <script src="script.js?v=51" defer></script>
+    <script src="analytics.js?v=51" defer></script>
+    <script src="backup.js?v=51" defer></script>
+    <script src="employees.js?v=51" defer></script>
+    <script src="labels.js?v=51" defer></script>
+    <script src="import.js?v=51" defer></script>
+    <script src="returns.js?v=51" defer></script>
+    <script src="reports.js?v=51" defer></script>
+    <script src="settings.js?v=51" defer></script>
+    
     <script>
     function togglePassword(fieldId, icon) {
         const field = document.getElementById(fieldId);
@@ -1470,36 +1439,16 @@
         window.addEventListener('resize', checkScreenSize);
     });
 
-    // ============================================================
-    // 🎯 NEW BULK ITEM LOGIC ADDED DIRECTLY HERE
-    // ============================================================
-    
     function onItemTypeChange() {
         const type = document.getElementById('itemType').value;
-        
-        // Show/Hide Bulk fields
         const bulkFields = document.getElementById('bulkFields');
-        if (bulkFields) {
-            bulkFields.style.display = (type === 'bulk') ? 'block' : 'none';
-        }
-        
-        // Show/Hide Weight fields
+        if (bulkFields) bulkFields.style.display = (type === 'bulk') ? 'block' : 'none';
         const weightFields = document.getElementById('weightFields');
-        if (weightFields) {
-            weightFields.style.display = (type === 'weight') ? 'block' : 'none';
-        }
-        
-        // Show/Hide Standard Stock Row (Hide it for weight-based items)
+        if (weightFields) weightFields.style.display = (type === 'weight') ? 'block' : 'none';
         const standardStockRow = document.getElementById('standardStockRow');
-        if (standardStockRow) {
-            standardStockRow.style.display = (type === 'weight') ? 'none' : 'flex';
-        }
-
-        // Show/Hide Weight Reorder Row
+        if (standardStockRow) standardStockRow.style.display = (type === 'weight') ? 'none' : 'flex';
         const weightReorderRow = document.getElementById('weightReorderRow');
-        if (weightReorderRow) {
-            weightReorderRow.style.display = (type === 'weight') ? 'flex' : 'none';
-        }
+        if (weightReorderRow) weightReorderRow.style.display = (type === 'weight') ? 'flex' : 'none';
     }
     window.onItemTypeChange = onItemTypeChange;
 
@@ -1527,31 +1476,22 @@
     }
     window.setPackPreset = setPackPreset;
 
-    // ============================================================
-    // 🎯 SAVE ITEM FUNCTION (THE MISSING PIECE)
-    // ============================================================
     async function saveItem() {
         const type = document.getElementById('itemType').value;
         let stock = 0;
         let unitsPerPack = 1;
 
-        // 1. Calculate Stock based on Item Type
         if (type === 'bulk') {
             unitsPerPack = parseInt(document.getElementById('itemUnitsPerPack').value) || 12;
             const packCount = parseInt(document.getElementById('packCount').value) || 0;
-            
-            if (packCount > 0) {
-                stock = packCount * unitsPerPack; // e.g., 30 * 12 = 360
-            } else {
-                stock = parseFloat(document.getElementById('itemStock').value) || 0;
-            }
+            if (packCount > 0) stock = packCount * unitsPerPack;
+            else stock = parseFloat(document.getElementById('itemStock').value) || 0;
         } else if (type === 'weight') {
             stock = parseFloat(document.getElementById('itemStockWeight').value) || 0;
         } else {
             stock = parseFloat(document.getElementById('itemStock').value) || 0;
         }
 
-        // 2. Gather all form data
         const payload = {
             name: document.getElementById('itemName').value.trim(),
             category: document.getElementById('itemCategory').value.trim(),
@@ -1566,20 +1506,13 @@
             unitOfMeasure: document.getElementById('itemUnitOfMeasure') ? document.getElementById('itemUnitOfMeasure').value : 'pcs'
         };
 
-        if (!payload.name) { 
-            showToast('Item Name is required', 'error'); 
-            return; 
-        }
+        if (!payload.name) { showToast('Item Name is required', 'error'); return; }
 
-        // 3. Send to the backend API
         try {
             showToast('Saving item...', 'info'); 
-            
             await API.createProduct(payload);
-            
             showToast('Item added successfully!', 'success');
             
-            // Clear the form
             document.getElementById('itemName').value = '';
             document.getElementById('itemBarcode').value = '';
             document.getElementById('itemCostPrice').value = '';
@@ -1588,10 +1521,7 @@
             document.getElementById('packCount').value = '';
             document.getElementById('totalPieces').value = '';
             
-            // Refresh the products grid so you see it instantly
-            if (typeof loadProducts === 'function') {
-                loadProducts(); 
-            }
+            if (typeof loadProducts === 'function') loadProducts(); 
         } catch (err) {
             showToast(err.message || 'Failed to save item', 'error');
         }
