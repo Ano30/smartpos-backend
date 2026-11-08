@@ -301,7 +301,6 @@ app.put('/api/employees/:id/reset-password', authenticate, async (req, res) => {
 app.get('/api/analytics/kpi', authenticate, (req, res) => {
     const { period } = req.query;
     
-    // Calculate Revenue, Transactions, Cash, and M-Pesa
     db.get(`SELECT 
             COUNT(id) as transactions, 
             SUM(total) as revenue,
@@ -309,7 +308,6 @@ app.get('/api/analytics/kpi', authenticate, (req, res) => {
             SUM(payment_mpesa) as mpesa_total
             FROM sales WHERE company_id = ?`, [req.user.companyId], (err, salesRow) => {
         
-        // Calculate Stock Value
         db.get(`SELECT SUM(stock * cost_price) as stockValue FROM products WHERE company_id = ? AND is_active = 1`, [req.user.companyId], (err2, stockRow) => {
             res.json({
                 totalRevenue: salesRow?.revenue || 0,
