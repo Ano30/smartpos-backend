@@ -65,31 +65,39 @@ async function searchSale(params) {
         showToast('Searching...', 'info');
         const result = await API.searchSaleForReturn(params);
         
-        if (!result.success) throw new Error('Search failed');
+        // 🎯 FIX: The backend sends the sale object directly. We check if it has an ID.
+        if (!result || !result.id) {
+            throw new Error('Sale not found');
+        }
         
-        currentReturnSale = result.sale;
+        currentReturnSale = result;
         returnItemSelections = {};
         
-        renderSaleForReturn(result.sale);
+        renderSaleForReturn(result);
         showReturnsSale();
     } catch (err) {
-        showToast(err.message, 'error');
+        showToast('Search failed: ' + err.message, 'error');
     }
 }
 
 // ============ RENDER SALE ============
 function renderSaleForReturn(sale) {
-    // Eligibility badge
+    // We calculate eligibility on the frontend since the backend doesn't send it
+    const saleDate = new Date(sale.created_at);
+    const now = new Date();
+    const diffDays = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
+    const isEligible = diffDays <= 7;
+
     const badge = document.getElementById('returnEligibilityBadge');
-    if (sale.eligible) {
+    if (isEligible) {
         badge.innerHTML = `
             <span class="eligibility-badge eligible">
-                <i class="fas fa-check-circle"></i> Eligible for return (${sale.days_since} day${sale.days_since !== 1 ? 's' : ''} ago)
+                <i class="fas fa-check-circle"></i> Eligible for return (${diffDays} day${diffDays !== 1 ? 's' : ''} ago)
             </span>`;
     } else {
         badge.innerHTML = `
             <span class="eligibility-badge expired">
-                <i class="fas fa-times-circle"></i> Return window expired (${sale.days_since} days ago, limit ${sale.return_window_days})
+                <i class="fas fa-times-circle"></i> Return window expired (${diffDays} days ago)
             </span>`;
     }
     
@@ -103,11 +111,11 @@ function renderSaleForReturn(sale) {
                 </div>
                 <div>
                     <div class="label">Date</div>
-                    <div class="value">${new Date(sale.sale_date).toLocaleString('en-KE')}</div>
+                    <div class="value">${new Date(sale.created_at).toLocaleString('en-KE')}</div>
                 </div>
                 <div>
                     <div class="label">Customer</div>
-                    <div class="value">${sale.customer_name || 'Walk-in'} ${sale.customer_phone ? '(' + sale.customer_phone + ')' : ''}</div>
+                    <div class="value">${sale.customer_phone || 'Walk-in'}</div>
                 </div>
                 <div>
                     <div class="label">Total Paid</div>
@@ -122,10 +130,10 @@ function renderSaleForReturn(sale) {
     `;
     
     // Render items
-    renderReturnItems(sale);
+    renderReturnItems(sale, isEligible);
 }
 
-function renderReturnItems(sale) {
+function renderReturnItems(sale, isEligible) {
     const list = document.getElementById('returnsItemsList');
     
     if (!sale.items || sale.items.length === 0) {
@@ -134,8 +142,8 @@ function renderReturnItems(sale) {
     }
     
     list.innerHTML = sale.items.map(item => {
-        const canReturn = item.can_return && sale.eligible;
-        const maxQty = item.returnable_qty;
+        const canReturn = isEligible;
+        const maxQty = item.quantity;
         const selectedQty = returnItemSelections[item.product_id] || 0;
         
         return `
@@ -144,7 +152,6 @@ function renderReturnItems(sale) {
                     <div class="return-item-name">${item.product_name}</div>
                     <div class="return-item-meta">
                         Sold: ${item.quantity} @ KES ${Number(item.unit_price).toFixed(2)}
-                        ${item.already_returned > 0 ? `<span class="already-returned">• Already returned: ${item.already_returned}</span>` : ''}
                     </div>
                 </div>
                 <div class="return-item-qty">
@@ -156,7 +163,7 @@ function renderReturnItems(sale) {
                                    value="${selectedQty}"
                                    min="0"
                                    max="${maxQty}"
-                                   step="0.01"
+                                   step="1"
                                    oninput="setReturnQty(${item.product_id}, this.value, ${maxQty})">
                             <button onclick="adjustReturnQty(${item.product_id}, 1, ${maxQty})">+</button>
                         </div>
@@ -174,17 +181,8 @@ function renderReturnItems(sale) {
 
 function adjustReturnQty(productId, change, maxQty) {
     if (!currentReturnSale) return;
-    const item = currentReturnSale.items.find(i => i.product_id === productId);
-    if (!item) return;
-    
-    const isWeight = item.product_type === 'weight';
-    const step = isWeight ? 0.5 : 1;
     let current = returnItemSelections[productId] || 0;
-    current = Math.max(0, Math.min(maxQty, current + (change * step)));
-    
-    // Round to 2 decimals
-    current = Math.round(current * 100) / 100;
-    
+    current = Math.max(0, Math.min(maxQty, current + change));
     returnItemSelections[productId] = current;
     
     const input = document.getElementById('retQty_' + productId);
@@ -224,7 +222,14 @@ async function processReturn() {
     const items = [];
     Object.entries(returnItemSelections).forEach(([productId, qty]) => {
         if (qty > 0) {
-            items.push({ productId: parseInt(productId), quantity: qty });
+            const saleItem = currentReturnSale.items.find(i => i.product_id == productId);
+            items.push({ 
+                productId: parseInt(productId), 
+                name: saleItem ? saleItem.product_name : 'Item',
+                returnQty: qty,
+                unit_price: saleItem ? saleItem.unit_price : 0,
+                total: saleItem ? saleItem.unit_price * qty : 0
+            });
         }
     });
     
@@ -236,19 +241,10 @@ async function processReturn() {
     const refundMethod = document.getElementById('refundMethod').value;
     const reason = document.getElementById('returnReason').value;
     const notes = document.getElementById('returnNotes').value.trim();
-    
     const totalText = document.getElementById('refundTotal').textContent;
+    const totalRefund = parseFloat(totalText.replace('KES ', ''));
     
-    const confirmed = confirm(
-        `Process refund?\n\n` +
-        `Items: ${items.length}\n` +
-        `Total: ${totalText}\n` +
-        `Method: ${refundMethod.toUpperCase()}\n` +
-        `Reason: ${reason}\n\n` +
-        `Stock will be restored automatically.`
-    );
-    
-    if (!confirmed) return;
+    if (!confirm(`Process refund of ${totalText}?`)) return;
     
     try {
         const result = await API.createReturn({
@@ -256,16 +252,16 @@ async function processReturn() {
             items: items,
             refundMethod: refundMethod,
             reason: reason,
-            notes: notes
+            notes: notes,
+            totalRefund: totalRefund
         });
         
         if (!result.success) throw new Error('Return failed');
         
-        showRefundReceipt(result.refund);
+        showToast('Return processed successfully!', 'success');
         
         // Reload products (stock changed)
-        await loadProducts();
-        if (typeof renderProducts === 'function') renderProducts();
+        if (typeof loadProducts === 'function') await loadProducts();
         
         // Reset
         backToSearch();
@@ -273,53 +269,6 @@ async function processReturn() {
     } catch (err) {
         showToast('Return failed: ' + err.message, 'error');
     }
-}
-
-// ============ REFUND RECEIPT ============
-function showRefundReceipt(refund) {
-    const body = document.getElementById('receiptBody');
-    document.getElementById('receiptCompany').textContent = currentCompany.name;
-    document.getElementById('receiptDate').textContent = new Date(refund.date).toLocaleString('en-KE');
-    document.getElementById('receiptCashier').textContent = refund.cashier || currentUser.username;
-    
-    body.innerHTML = `
-        <div class="receipt-row" style="font-weight:bold;color:#e74c3c;border-bottom:1px solid #ddd;padding-bottom:5px;">
-            <span>REFUND RECEIPT</span>
-            <span>${refund.refundNo}</span>
-        </div>
-        <div class="receipt-row" style="font-size:11px;">
-            <span>Original Receipt</span>
-            <span>${refund.originalReceipt}</span>
-        </div>
-        ${refund.customerName ? `
-            <div class="receipt-row" style="font-size:11px;">
-                <span>Customer</span>
-                <span>${refund.customerName}</span>
-            </div>
-        ` : ''}
-        <div style="height:10px;"></div>
-        ${refund.items.map(item => `
-            <div class="receipt-row">
-                <span>${item.product_name} x${item.quantity}</span>
-                <span>KES ${Number(item.total).toFixed(2)}</span>
-            </div>
-        `).join('')}
-        <div class="receipt-divider"></div>
-        <div class="receipt-row receipt-total" style="color:#e74c3c;">
-            <span>REFUND TOTAL</span>
-            <span>KES ${Number(refund.totalRefund).toFixed(2)}</span>
-        </div>
-        <div class="receipt-row">
-            <span>Method</span>
-            <span style="text-transform:capitalize;">${refund.refundMethod}</span>
-        </div>
-        <div class="receipt-row">
-            <span>Reason</span>
-            <span>${refund.reason}</span>
-        </div>
-    `;
-    
-    document.getElementById('receiptModal').classList.add('active');
 }
 
 // ============ LOAD RETURNS LIST ============
@@ -341,25 +290,21 @@ async function loadReturnsList() {
                     <tr>
                         <th>#</th>
                         <th>Date</th>
-                        <th>Refund #</th>
-                        <th>Original Receipt</th>
+                        <th>Receipt</th>
                         <th>Refunded</th>
                         <th>Method</th>
                         <th>Reason</th>
-                        <th>Cashier</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${returns.map((r, i) => `
                         <tr>
                             <td>${i + 1}</td>
-                            <td>${new Date(r.return_date).toLocaleString('en-KE')}</td>
-                            <td><code>REF-${String(r.id).padStart(6, '0')}</code></td>
-                            <td>${r.original_receipt || '—'}</td>
-                            <td><strong style="color:#e74c3c;">KES ${Number(r.refund_amount).toFixed(2)}</strong></td>
+                            <td>${new Date(r.created_at).toLocaleString('en-KE')}</td>
+                            <td>${r.receipt_no || '—'}</td>
+                            <td><strong style="color:#e74c3c;">KES ${Number(r.total_refund).toFixed(2)}</strong></td>
                             <td style="text-transform:capitalize;">${r.refund_method}</td>
                             <td>${r.reason || '—'}</td>
-                            <td>${r.cashier_name || '—'}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -372,7 +317,6 @@ async function loadReturnsList() {
 
 // ============ SETUP EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', function() {
-    // Enter key on receipt input
     const receiptInput = document.getElementById('returnReceiptInput');
     if (receiptInput) {
         receiptInput.addEventListener('keydown', e => {
@@ -380,7 +324,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Enter key on phone input
     const phoneInput = document.getElementById('returnPhoneInput');
     if (phoneInput) {
         phoneInput.addEventListener('keydown', e => {
@@ -388,3 +331,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Expose globally
+window.switchReturnTab = switchReturnTab;
+window.showReturnsSearch = showReturnsSearch;
+window.showReturnsSale = showReturnsSale;
+window.showReturnsList = showReturnsList;
+window.backToSearch = backToSearch;
+window.searchSaleByReceipt = searchSaleByReceipt;
+window.searchSaleByPhone = searchSaleByPhone;
+window.adjustReturnQty = adjustReturnQty;
+window.setReturnQty = setReturnQty;
+window.processReturn = processReturn;
+window.loadReturnsList = loadReturnsList;
