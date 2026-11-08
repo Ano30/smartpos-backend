@@ -385,6 +385,14 @@ app.get('/api/returns/search-sale', authenticate, (req, res) => {
     });
 });
 
+// 🎯 GET ALL RETURNS (This was missing)
+app.get('/api/returns', authenticate, (req, res) => {
+    db.all("SELECT * FROM returns WHERE company_id = ? ORDER BY id DESC LIMIT 100", [req.user.companyId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
+});
+
 app.post('/api/returns', authenticate, (req, res) => {
     const { saleId, items, refundMethod, reason, notes, totalRefund } = req.body;
     db.get("SELECT receipt_no FROM sales WHERE id = ?", [saleId], (err, sale) => {
